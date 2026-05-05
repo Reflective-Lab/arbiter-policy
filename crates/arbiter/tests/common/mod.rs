@@ -1,8 +1,8 @@
 use ed25519_dalek::SigningKey;
 
+use arbiter::{ContextIn, DecideRequest, PolicyEngine, PrincipalIn, ResourceIn};
 use converge_core::{AuthorityLevel, FlowAction, FlowPhase};
 use converge_pack::{DomainId, GateId, ResourceKind};
-use arbiter::{ContextIn, DecideRequest, PolicyEngine, PrincipalIn, ResourceIn};
 
 #[allow(dead_code)]
 pub fn test_engine() -> PolicyEngine {

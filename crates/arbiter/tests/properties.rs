@@ -3,12 +3,12 @@ mod common;
 use ed25519_dalek::SigningKey;
 use proptest::prelude::*;
 
-use converge_core::AuthorityLevel;
-use converge_pack::ResourceId;
 use arbiter::{
     PolicyOutcome,
     delegation::{IssueDelegationReq, issue, verify},
 };
+use converge_core::AuthorityLevel;
+use converge_pack::ResourceId;
 
 use common::{make_request, test_engine};
 

@@ -1,9 +1,9 @@
+use arbiter::{FLOW_GOVERNANCE_POLICY, FlowGateAuthorizer, PolicyEngine};
 use converge_core::{
     AuthorityLevel, FlowAction, FlowGateContext, FlowGateInput, FlowGateOutcome, FlowGatePrincipal,
     FlowGateResource, FlowPhase,
 };
 use converge_pack::{DomainId, GateId, PolicyVersionId, PrincipalId, ResourceId, ResourceKind};
-use arbiter::{FLOW_GOVERNANCE_POLICY, FlowGateAuthorizer, PolicyEngine};
 
 fn engine() -> PolicyEngine {
     PolicyEngine::from_policy_str(FLOW_GOVERNANCE_POLICY)

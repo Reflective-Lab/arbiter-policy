@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
+use arbiter::{ContextIn, DecideRequest, PolicyEngine, PrincipalIn, ResourceIn};
 use converge_core::{AuthorityLevel, FlowAction, FlowPhase};
 use converge_pack::{DomainId, GateId, PrincipalId, ResourceId, ResourceKind};
-use arbiter::{ContextIn, DecideRequest, PolicyEngine, PrincipalIn, ResourceIn};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let policy_path =

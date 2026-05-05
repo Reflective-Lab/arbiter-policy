@@ -6,6 +6,12 @@
 //!   POST /issue-delegation — issue a scoped authority token
 //!   GET  /pubkey           — Ed25519 public key for delegation verification
 
+use arbiter::{
+    PolicyEngine,
+    decision::{DecisionMode, PolicyDecision, PolicyOutcome},
+    delegation,
+    types::DecideRequest,
+};
 use axum::{
     Json, Router,
     extract::State,
@@ -14,12 +20,6 @@ use axum::{
     routing::{get, post},
 };
 use base64::{Engine as _, engine::general_purpose};
-use arbiter::{
-    PolicyEngine,
-    decision::{DecisionMode, PolicyDecision, PolicyOutcome},
-    delegation,
-    types::DecideRequest,
-};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use serde::Serialize;
 use std::{fs, net::SocketAddr, path::PathBuf, sync::Arc};

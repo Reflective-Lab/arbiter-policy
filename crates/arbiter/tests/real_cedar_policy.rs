@@ -1,10 +1,8 @@
 use std::path::PathBuf;
 
+use arbiter::{ContextIn, DecideRequest, PolicyEngine, PolicyOutcome, PrincipalIn, ResourceIn};
 use converge_core::{AuthorityLevel, FlowAction, FlowPhase};
 use converge_pack::{DomainId, GateId, ResourceKind};
-use arbiter::{
-    ContextIn, DecideRequest, PolicyEngine, PolicyOutcome, PrincipalIn, ResourceIn,
-};
 
 fn expense_engine() -> PolicyEngine {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("policies/expense_approval.cedar");

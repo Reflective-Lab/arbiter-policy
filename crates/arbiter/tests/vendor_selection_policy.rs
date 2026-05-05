@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 
+use arbiter::{FlowGateAuthorizer, PolicyEngine};
 use converge_core::{
     AuthorityLevel, FlowAction, FlowGateContext, FlowGateInput, FlowGateOutcome, FlowGatePrincipal,
     FlowGateResource, FlowPhase,
 };
 use converge_pack::{DomainId, GateId, PolicyVersionId, ResourceKind};
-use arbiter::{FlowGateAuthorizer, PolicyEngine};
 
 fn vendor_engine() -> PolicyEngine {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("policies/vendor_selection.cedar");
