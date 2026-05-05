@@ -1,5 +1,12 @@
 # arbiter
 
+[![CI](https://github.com/Reflective-Lab/arbiter/actions/workflows/ci.yml/badge.svg)](https://github.com/Reflective-Lab/arbiter/actions/workflows/ci.yml)
+[![Security](https://github.com/Reflective-Lab/arbiter/actions/workflows/security.yml/badge.svg)](https://github.com/Reflective-Lab/arbiter/actions/workflows/security.yml)
+[![dependency status](https://deps.rs/repo/github/Reflective-Lab/arbiter/status.svg)](https://deps.rs/repo/github/Reflective-Lab/arbiter)
+![MSRV](https://img.shields.io/badge/MSRV-1.94.0-blue)
+<img alt="gitleaks badge" src="https://img.shields.io/badge/protected%20by-gitleaks-blue">
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Cedar-backed authorization gates for Converge formations.
 
 `arbiter` is a Converge extension. It keeps policy implementation, Cedar
