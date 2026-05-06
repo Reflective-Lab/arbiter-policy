@@ -10,7 +10,7 @@
 
 **Please do not report security vulnerabilities through public GitHub issues.**
 
-Report through [GitHub Security Advisories](https://github.com/Reflective-Lab/arbiter/security/advisories/new) or by emailing **Kenneth Pernyer** at [kenneth@reflective.se](mailto:kenneth@reflective.se).
+Report through [GitHub Security Advisories](https://github.com/Reflective-Lab/arbiter-policy/security/advisories/new) or by emailing **Kenneth Pernyer** at [kenneth@reflective.se](mailto:kenneth@reflective.se).
 
 You should receive a response within 48 hours.
 

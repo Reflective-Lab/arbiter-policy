@@ -5,7 +5,7 @@ source: mixed
 # Getting Started
 
 ```bash
-git clone https://github.com/Reflective-Lab/arbiter.git
+git clone https://github.com/Reflective-Lab/arbiter-policy.git
 cd arbiter
 just                # check + lint + test
 ```

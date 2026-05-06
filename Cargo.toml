@@ -7,7 +7,7 @@ version = "1.0.0"
 edition = "2024"
 rust-version = "1.94.0"
 license = "MIT"
-repository = "https://github.com/Reflective-Lab/arbiter"
+repository = "https://github.com/Reflective-Lab/arbiter-policy"
 
 [workspace.dependencies]
 # Converge platform
