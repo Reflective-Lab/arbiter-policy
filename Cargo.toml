@@ -11,8 +11,8 @@ repository = "https://github.com/Reflective-Lab/arbiter"
 
 [workspace.dependencies]
 # Converge platform
-converge-core = "3.7.6"
-converge-pack = "3.7.6"
+converge-core = "3.8.1"
+converge-pack = "3.8.1"
 
 # Policy engine
 cedar-policy = "2.4"
@@ -68,8 +68,3 @@ wildcard_imports = "allow"
 opt-level = 3
 lto = true
 codegen-units = 1
-
-# Track unreleased Converge platform head until each crate ships to crates.io.
-[patch.crates-io]
-converge-core = { path = "../../work/converge/crates/core" }
-converge-pack = { path = "../../work/converge/crates/pack" }

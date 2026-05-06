@@ -10,7 +10,7 @@ cargo test --workspace
 cargo clippy --workspace -- -D warnings
 ```
 
-While the Converge platform is unreleased, this workspace patches `converge-core` and `converge-pack` to local checkouts at `~/dev/work/converge/crates/...` via `[patch.crates-io]`.
+This workspace depends on published Converge crates from crates.io.
 
 ## Boundaries
 

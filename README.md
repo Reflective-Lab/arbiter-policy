@@ -90,8 +90,7 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-While Converge platform crates are unreleased, this workspace patches local
-Converge crates at `../../work/converge/crates/...`.
+Converge platform dependencies resolve from crates.io.
 
 ## Project Files
 
