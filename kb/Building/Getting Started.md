@@ -6,7 +6,7 @@ source: mixed
 
 ```bash
 git clone https://github.com/Reflective-Lab/arbiter-policy.git
-cd arbiter
+cd arbiter-policy
 just                # check + lint + test
 ```
 
