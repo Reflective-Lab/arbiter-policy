@@ -1,5 +1,5 @@
 [package]
-name = "arbiter"
+name = "converge-arbiter-policy"
 version.workspace = true
 publish = false
 edition.workspace = true

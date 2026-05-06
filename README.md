@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/Reflective-Lab/arbiter-policy/actions/workflows/ci.yml/badge.svg)](https://github.com/Reflective-Lab/arbiter-policy/actions/workflows/ci.yml)
 [![Security](https://github.com/Reflective-Lab/arbiter-policy/actions/workflows/security.yml/badge.svg)](https://github.com/Reflective-Lab/arbiter-policy/actions/workflows/security.yml)
+[![Crates.io](https://img.shields.io/crates/v/converge-arbiter-policy.svg)](https://crates.io/crates/converge-arbiter-policy)
+[![docs.rs](https://docs.rs/converge-arbiter-policy/badge.svg)](https://docs.rs/converge-arbiter-policy)
 [![dependency status](https://deps.rs/repo/github/Reflective-Lab/arbiter-policy/status.svg)](https://deps.rs/repo/github/Reflective-Lab/arbiter-policy)
 ![MSRV](https://img.shields.io/badge/MSRV-1.94.0-blue)
 <img alt="gitleaks badge" src="https://img.shields.io/badge/protected%20by-gitleaks-blue">
@@ -13,6 +15,9 @@ Cedar-backed authorization gates for Converge formations.
 evaluation, delegation verification, and authorization suggestors outside the
 Converge foundation while still using Converge's shared contracts for
 in-loop behavior.
+
+Cargo package: `converge-arbiter-policy`. Rust library and binary names remain
+`arbiter`.
 
 ## Why It Exists
 
