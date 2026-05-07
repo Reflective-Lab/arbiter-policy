@@ -6,9 +6,8 @@ use common::{fixed_signing_key, make_request};
 
 #[test]
 fn invalid_policy_source_is_rejected() {
-    let err = match PolicyEngine::from_policy_str("this is not cedar") {
-        Ok(_) => panic!("policy should fail"),
-        Err(err) => err,
+    let Err(err) = PolicyEngine::from_policy_str("this is not cedar") else {
+        panic!("policy should fail");
     };
 
     assert!(matches!(err, EngineError::PolicyParse(_)));

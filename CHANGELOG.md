@@ -4,10 +4,14 @@ All notable changes to arbiter will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-07
+
 ### Changed
 
 - Cargo package renamed from `arbiter` to `converge-arbiter-policy`; Rust
   library and binary names remain `arbiter`.
+- Internal clippy cleanups: collapsed nested `if let` chains using
+  let-chains and replaced empty-string conversions with `String::new()`.
 
 ## [1.0.0] - 2026-05-05
 

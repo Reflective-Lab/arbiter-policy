@@ -54,7 +54,6 @@ impl IntoResponse for ServerError {
             ServerError::Unauthorized => StatusCode::UNAUTHORIZED,
             ServerError::Forbidden(_) => StatusCode::FORBIDDEN,
             ServerError::NotFound(_) => StatusCode::NOT_FOUND,
-            ServerError::Config(_) => StatusCode::INTERNAL_SERVER_ERROR,
             ServerError::Delegation(_) => StatusCode::BAD_REQUEST,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
@@ -104,8 +103,7 @@ impl ServerConfig {
             .map_err(|err| ServerError::Server(format!("invalid POLICY_BIND: {err}")))?;
 
         let policy_path = std::env::var("POLICY_FILE")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("policies/policy.cedar"));
+            .map_or_else(|_| PathBuf::from("policies/policy.cedar"), PathBuf::from);
 
         let issue_delegation_enabled = std::env::var("POLICY_ENABLE_DELEGATION_ISSUANCE")
             .map(|value| {

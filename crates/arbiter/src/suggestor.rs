@@ -44,7 +44,7 @@ impl PolicyGateSuggestor {
 
 #[async_trait::async_trait]
 impl Suggestor for PolicyGateSuggestor {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "policy-gate"
     }
 
@@ -97,6 +97,7 @@ impl Suggestor for PolicyGateSuggestor {
 
 // --- DelegationVerifySuggestor ---
 
+#[allow(clippy::struct_field_names)]
 pub struct DelegationVerifySuggestor {
     verifying_key: VerifyingKey,
     input_key: ContextKey,
@@ -129,7 +130,7 @@ impl DelegationVerifySuggestor {
 
 #[async_trait::async_trait]
 impl Suggestor for DelegationVerifySuggestor {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "delegation-verify"
     }
 
@@ -225,7 +226,7 @@ impl FlowGateSuggestor {
 
 #[async_trait::async_trait]
 impl Suggestor for FlowGateSuggestor {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "flow-gate"
     }
 
@@ -297,7 +298,7 @@ impl RateLimitGateSuggestor {
 
 #[async_trait::async_trait]
 impl Suggestor for RateLimitGateSuggestor {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "rate-limit-gate"
     }
 
@@ -349,7 +350,7 @@ impl BudgetGateSuggestor {
 
 #[async_trait::async_trait]
 impl Suggestor for BudgetGateSuggestor {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "budget-gate"
     }
 
@@ -372,7 +373,7 @@ impl Suggestor for BudgetGateSuggestor {
             .filter_map(|f| {
                 serde_json::from_str::<serde_json::Value>(f.content())
                     .ok()
-                    .and_then(|v| v.get("cost").and_then(|c| c.as_f64()))
+                    .and_then(|v| v.get("cost").and_then(serde_json::Value::as_f64))
             })
             .sum();
 
@@ -426,7 +427,7 @@ impl ApprovalGateSuggestor {
 
 #[async_trait::async_trait]
 impl Suggestor for ApprovalGateSuggestor {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "approval-gate"
     }
 
@@ -448,7 +449,7 @@ impl Suggestor for ApprovalGateSuggestor {
         let needs_approval = facts.iter().any(|f| {
             serde_json::from_str::<serde_json::Value>(f.content())
                 .ok()
-                .and_then(|v| v.get("confidence").and_then(|c| c.as_f64()))
+                .and_then(|v| v.get("confidence").and_then(serde_json::Value::as_f64))
                 .is_none_or(|c| c >= self.stakes_threshold)
         });
 
@@ -513,7 +514,7 @@ impl DataClassificationGateSuggestor {
 
 #[async_trait::async_trait]
 impl Suggestor for DataClassificationGateSuggestor {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "data-classification-gate"
     }
 
@@ -600,7 +601,7 @@ impl ComplianceGateSuggestor {
 
 #[async_trait::async_trait]
 impl Suggestor for ComplianceGateSuggestor {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "compliance-gate"
     }
 
@@ -630,7 +631,7 @@ impl Suggestor for ComplianceGateSuggestor {
                     ComplianceCondition::FieldMustNotExist => value.get(&rule.field).is_some(),
                     ComplianceCondition::MaxValue(max) => value
                         .get(&rule.field)
-                        .and_then(|v| v.as_f64())
+                        .and_then(serde_json::Value::as_f64)
                         .is_some_and(|v| v > *max),
                     ComplianceCondition::MustNotContain(forbidden) => value
                         .get(&rule.field)

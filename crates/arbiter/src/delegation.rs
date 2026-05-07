@@ -94,10 +94,10 @@ pub fn issue(
     if req.exp_epoch <= req.nbf_epoch {
         return Err("delegation exp_epoch must be later than nbf_epoch".to_string());
     }
-    if let Some(max_amount) = req.max_amount {
-        if max_amount < 0 {
-            return Err("delegation max_amount cannot be negative".to_string());
-        }
+    if let Some(max_amount) = req.max_amount
+        && max_amount < 0
+    {
+        return Err("delegation max_amount cannot be negative".to_string());
     }
 
     let mut del = Delegation {
@@ -182,14 +182,12 @@ pub fn verify(b64: &str, vkey: &VerifyingKey, req: &DecideRequest) -> Result<boo
     }
 
     // Check amount cap
-    if let Some(max) = del.max_amount {
-        if let Some(ref ctx) = req.context {
-            if let Some(amount) = ctx.amount {
-                if amount > max {
-                    return Ok(false);
-                }
-            }
-        }
+    if let Some(max) = del.max_amount
+        && let Some(ref ctx) = req.context
+        && let Some(amount) = ctx.amount
+        && amount > max
+    {
+        return Ok(false);
     }
 
     Ok(true)
@@ -269,7 +267,7 @@ mod tests {
     fn issue_rejects_empty_jti() {
         let key = signing_key();
         let mut req = valid_req();
-        req.jti = "".into();
+        req.jti = String::new();
         let err = issue(&key, req).unwrap_err();
         assert!(err.contains("jti"));
     }
