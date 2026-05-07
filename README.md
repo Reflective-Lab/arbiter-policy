@@ -1,7 +1,9 @@
 # arbiter
 
 [![CI](https://github.com/Reflective-Lab/arbiter-policy/actions/workflows/ci.yml/badge.svg)](https://github.com/Reflective-Lab/arbiter-policy/actions/workflows/ci.yml)
+[![Coverage](https://github.com/Reflective-Lab/arbiter-policy/actions/workflows/coverage.yml/badge.svg)](https://github.com/Reflective-Lab/arbiter-policy/actions/workflows/coverage.yml)
 [![Security](https://github.com/Reflective-Lab/arbiter-policy/actions/workflows/security.yml/badge.svg)](https://github.com/Reflective-Lab/arbiter-policy/actions/workflows/security.yml)
+[![Stability](https://github.com/Reflective-Lab/arbiter-policy/actions/workflows/stability.yml/badge.svg)](https://github.com/Reflective-Lab/arbiter-policy/actions/workflows/stability.yml)
 [![Crates.io](https://img.shields.io/crates/v/converge-arbiter-policy.svg)](https://crates.io/crates/converge-arbiter-policy)
 [![docs.rs](https://docs.rs/converge-arbiter-policy/badge.svg)](https://docs.rs/converge-arbiter-policy)
 [![dependency status](https://deps.rs/repo/github/Reflective-Lab/arbiter-policy/status.svg)](https://deps.rs/repo/github/Reflective-Lab/arbiter-policy)
