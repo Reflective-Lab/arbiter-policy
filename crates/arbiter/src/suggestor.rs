@@ -1,14 +1,63 @@
 use std::sync::Arc;
 
 use converge_core::FlowGateInput;
-use converge_pack::{AgentEffect, Context, ContextKey, Suggestor, fact::ProposedFact};
+use converge_pack::{AgentEffect, Context, ContextKey, ProposalId, Suggestor, fact::ProposedFact};
 use ed25519_dalek::VerifyingKey;
+use tracing::info_span;
 
 use crate::delegation;
 use crate::engine::PolicyEngine;
+use crate::provenance::ProvenanceSource;
 use crate::types::DecideRequest;
 
-const PROVENANCE: &str = "arbiter";
+const PROVENANCE_SOURCE: ProvenanceSource = ProvenanceSource::Arbiter;
+const POLICY_GATE_NAME: &str = "policy-gate";
+const DELEGATION_VERIFY_NAME: &str = "delegation-verify";
+const CEDAR_HITL_GATE_NAME: &str = "cedar-hitl-gate";
+const FLOW_GATE_NAME: &str = "flow-gate";
+const RATE_LIMIT_GATE_NAME: &str = "rate-limit-gate";
+const BUDGET_GATE_NAME: &str = "budget-gate";
+const APPROVAL_GATE_NAME: &str = "approval-gate";
+const DATA_CLASSIFICATION_GATE_NAME: &str = "data-classification-gate";
+const COMPLIANCE_GATE_NAME: &str = "compliance-gate";
+
+fn proposed_fact(
+    key: ContextKey,
+    id: impl Into<ProposalId>,
+    content: impl Into<String>,
+) -> ProposedFact {
+    PROVENANCE_SOURCE.proposed_fact(key, id, content)
+}
+
+fn suggestor_span(
+    name: &'static str,
+    input_key: ContextKey,
+    output_key: ContextKey,
+    input_count: usize,
+) -> tracing::Span {
+    info_span!(
+        "arbiter.suggestor.execute",
+        provenance = PROVENANCE_SOURCE.as_str(),
+        suggestor = name,
+        input_key = ?input_key,
+        output_key = ?output_key,
+        input_count
+    )
+}
+
+fn watched_suggestor_span(
+    name: &'static str,
+    watched_key: ContextKey,
+    input_count: usize,
+) -> tracing::Span {
+    info_span!(
+        "arbiter.suggestor.execute",
+        provenance = PROVENANCE_SOURCE.as_str(),
+        suggestor = name,
+        watched_key = ?watched_key,
+        input_count
+    )
+}
 
 // --- PolicyGateSuggestor ---
 
@@ -45,7 +94,7 @@ impl PolicyGateSuggestor {
 #[async_trait::async_trait]
 impl Suggestor for PolicyGateSuggestor {
     fn name(&self) -> &'static str {
-        "policy-gate"
+        POLICY_GATE_NAME
     }
 
     fn dependencies(&self) -> &[ContextKey] {
@@ -57,6 +106,13 @@ impl Suggestor for PolicyGateSuggestor {
     }
 
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
+        let _span = suggestor_span(
+            POLICY_GATE_NAME,
+            self.input_key,
+            self.output_key,
+            ctx.count(self.input_key),
+        )
+        .entered();
         let facts = ctx.get(self.input_key);
         let Some(seed) = facts.first() else {
             return AgentEffect::empty();
@@ -65,11 +121,10 @@ impl Suggestor for PolicyGateSuggestor {
         let req: DecideRequest = match serde_json::from_str(seed.content()) {
             Ok(r) => r,
             Err(e) => {
-                let diag = ProposedFact::new(
+                let diag = proposed_fact(
                     ContextKey::Diagnostic,
                     "policy-gate-error",
                     format!("failed to parse DecideRequest: {e}"),
-                    PROVENANCE,
                 );
                 return AgentEffect::with_proposal(diag);
             }
@@ -78,16 +133,14 @@ impl Suggestor for PolicyGateSuggestor {
         match self.engine.evaluate(&req) {
             Ok(decision) => {
                 let content = serde_json::to_string(&decision).unwrap_or_default();
-                let proposal =
-                    ProposedFact::new(self.output_key, "policy-decision", content, PROVENANCE);
+                let proposal = proposed_fact(self.output_key, "policy-decision", content);
                 AgentEffect::with_proposal(proposal)
             }
             Err(e) => {
-                let diag = ProposedFact::new(
+                let diag = proposed_fact(
                     ContextKey::Diagnostic,
                     "policy-gate-error",
                     format!("policy evaluation failed: {e}"),
-                    PROVENANCE,
                 );
                 AgentEffect::with_proposal(diag)
             }
@@ -131,7 +184,7 @@ impl DelegationVerifySuggestor {
 #[async_trait::async_trait]
 impl Suggestor for DelegationVerifySuggestor {
     fn name(&self) -> &'static str {
-        "delegation-verify"
+        DELEGATION_VERIFY_NAME
     }
 
     fn dependencies(&self) -> &[ContextKey] {
@@ -143,6 +196,13 @@ impl Suggestor for DelegationVerifySuggestor {
     }
 
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
+        let _span = suggestor_span(
+            DELEGATION_VERIFY_NAME,
+            self.input_key,
+            self.output_key,
+            ctx.count(self.input_key),
+        )
+        .entered();
         let facts = ctx.get(self.input_key);
         let Some(seed) = facts.first() else {
             return AgentEffect::empty();
@@ -151,22 +211,20 @@ impl Suggestor for DelegationVerifySuggestor {
         let req: DecideRequest = match serde_json::from_str(seed.content()) {
             Ok(r) => r,
             Err(e) => {
-                let diag = ProposedFact::new(
+                let diag = proposed_fact(
                     ContextKey::Diagnostic,
                     "delegation-verify-error",
                     format!("failed to parse DecideRequest: {e}"),
-                    PROVENANCE,
                 );
                 return AgentEffect::with_proposal(diag);
             }
         };
 
         let Some(ref token_b64) = req.delegation_b64 else {
-            let diag = ProposedFact::new(
+            let diag = proposed_fact(
                 ContextKey::Diagnostic,
                 "delegation-verify-error",
                 "no delegation_b64 in request",
-                PROVENANCE,
             );
             return AgentEffect::with_proposal(diag);
         };
@@ -178,14 +236,12 @@ impl Suggestor for DelegationVerifySuggestor {
                 } else {
                     r#"{"valid":false,"reason":"constraints not met"}"#.to_string()
                 };
-                let proposal =
-                    ProposedFact::new(self.output_key, "delegation-result", content, PROVENANCE);
+                let proposal = proposed_fact(self.output_key, "delegation-result", content);
                 AgentEffect::with_proposal(proposal)
             }
             Err(e) => {
                 let content = format!(r#"{{"valid":false,"reason":"{e}"}}"#);
-                let proposal =
-                    ProposedFact::new(self.output_key, "delegation-result", content, PROVENANCE);
+                let proposal = proposed_fact(self.output_key, "delegation-result", content);
                 AgentEffect::with_proposal(proposal)
             }
         }
@@ -194,12 +250,15 @@ impl Suggestor for DelegationVerifySuggestor {
 
 fn execute_flow_gate(
     engine: &PolicyEngine,
+    suggestor_name: &'static str,
     input_key: ContextKey,
     output_key: ContextKey,
     proposal_id: &'static str,
     error_id: &'static str,
     ctx: &dyn Context,
 ) -> AgentEffect {
+    let _span =
+        suggestor_span(suggestor_name, input_key, output_key, ctx.count(input_key)).entered();
     let facts = ctx.get(input_key);
     let Some(seed) = facts.first() else {
         return AgentEffect::empty();
@@ -208,11 +267,10 @@ fn execute_flow_gate(
     let input: FlowGateInput = match serde_json::from_str(seed.content()) {
         Ok(i) => i,
         Err(e) => {
-            let diag = ProposedFact::new(
+            let diag = proposed_fact(
                 ContextKey::Diagnostic,
                 error_id,
                 format!("failed to parse FlowGateInput: {e}"),
-                PROVENANCE,
             );
             return AgentEffect::with_proposal(diag);
         }
@@ -221,15 +279,14 @@ fn execute_flow_gate(
     match engine.evaluate_flow(&input) {
         Ok(decision) => {
             let content = serde_json::to_string(&decision).unwrap_or_default();
-            let proposal = ProposedFact::new(output_key, proposal_id, content, PROVENANCE);
+            let proposal = proposed_fact(output_key, proposal_id, content);
             AgentEffect::with_proposal(proposal)
         }
         Err(e) => {
-            let diag = ProposedFact::new(
+            let diag = proposed_fact(
                 ContextKey::Diagnostic,
                 error_id,
                 format!("flow gate evaluation failed: {e}"),
-                PROVENANCE,
             );
             AgentEffect::with_proposal(diag)
         }
@@ -278,7 +335,7 @@ impl CedarHitlGateSuggestor {
 #[async_trait::async_trait]
 impl Suggestor for CedarHitlGateSuggestor {
     fn name(&self) -> &'static str {
-        "cedar-hitl-gate"
+        CEDAR_HITL_GATE_NAME
     }
 
     fn dependencies(&self) -> &[ContextKey] {
@@ -292,6 +349,7 @@ impl Suggestor for CedarHitlGateSuggestor {
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
         execute_flow_gate(
             self.engine.as_ref(),
+            CEDAR_HITL_GATE_NAME,
             self.input_key,
             self.output_key,
             "cedar-hitl-gate-decision",
@@ -336,7 +394,7 @@ impl FlowGateSuggestor {
 #[async_trait::async_trait]
 impl Suggestor for FlowGateSuggestor {
     fn name(&self) -> &'static str {
-        "flow-gate"
+        FLOW_GATE_NAME
     }
 
     fn dependencies(&self) -> &[ContextKey] {
@@ -350,6 +408,7 @@ impl Suggestor for FlowGateSuggestor {
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
         execute_flow_gate(
             self.engine.as_ref(),
+            FLOW_GATE_NAME,
             self.input_key,
             self.output_key,
             "flow-gate-decision",
@@ -381,7 +440,7 @@ impl RateLimitGateSuggestor {
 #[async_trait::async_trait]
 impl Suggestor for RateLimitGateSuggestor {
     fn name(&self) -> &'static str {
-        "rate-limit-gate"
+        RATE_LIMIT_GATE_NAME
     }
 
     fn dependencies(&self) -> &[ContextKey] {
@@ -397,8 +456,14 @@ impl Suggestor for RateLimitGateSuggestor {
     }
 
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
+        let _span = watched_suggestor_span(
+            RATE_LIMIT_GATE_NAME,
+            self.watched_key,
+            ctx.count(self.watched_key),
+        )
+        .entered();
         let count = ctx.count(self.watched_key);
-        AgentEffect::with_proposal(ProposedFact::new(
+        AgentEffect::with_proposal(proposed_fact(
             ContextKey::Constraints,
             "rate-limit-exceeded",
             serde_json::json!({
@@ -409,7 +474,6 @@ impl Suggestor for RateLimitGateSuggestor {
                 "action": "block",
             })
             .to_string(),
-            PROVENANCE,
         ))
     }
 }
@@ -433,7 +497,7 @@ impl BudgetGateSuggestor {
 #[async_trait::async_trait]
 impl Suggestor for BudgetGateSuggestor {
     fn name(&self) -> &'static str {
-        "budget-gate"
+        BUDGET_GATE_NAME
     }
 
     fn dependencies(&self) -> &[ContextKey] {
@@ -449,6 +513,13 @@ impl Suggestor for BudgetGateSuggestor {
     }
 
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
+        let _span = suggestor_span(
+            BUDGET_GATE_NAME,
+            self.cost_key,
+            ContextKey::Constraints,
+            ctx.count(self.cost_key),
+        )
+        .entered();
         let facts = ctx.get(self.cost_key);
         let total_cost: f64 = facts
             .iter()
@@ -460,7 +531,7 @@ impl Suggestor for BudgetGateSuggestor {
             .sum();
 
         if total_cost > self.max_cost {
-            AgentEffect::with_proposal(ProposedFact::new(
+            AgentEffect::with_proposal(proposed_fact(
                 ContextKey::Constraints,
                 "budget-exceeded",
                 serde_json::json!({
@@ -470,7 +541,6 @@ impl Suggestor for BudgetGateSuggestor {
                     "action": "block",
                 })
                 .to_string(),
-                PROVENANCE,
             ))
         } else {
             AgentEffect::empty()
@@ -510,7 +580,7 @@ impl ApprovalGateSuggestor {
 #[async_trait::async_trait]
 impl Suggestor for ApprovalGateSuggestor {
     fn name(&self) -> &'static str {
-        "approval-gate"
+        APPROVAL_GATE_NAME
     }
 
     fn dependencies(&self) -> &[ContextKey] {
@@ -527,6 +597,13 @@ impl Suggestor for ApprovalGateSuggestor {
     }
 
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
+        let _span = suggestor_span(
+            APPROVAL_GATE_NAME,
+            self.watched_key,
+            self.approval_key,
+            ctx.count(self.watched_key),
+        )
+        .entered();
         let facts = ctx.get(self.watched_key);
         let needs_approval = facts.iter().any(|f| {
             serde_json::from_str::<serde_json::Value>(f.content())
@@ -536,7 +613,7 @@ impl Suggestor for ApprovalGateSuggestor {
         });
 
         if needs_approval {
-            AgentEffect::with_proposal(ProposedFact::new(
+            AgentEffect::with_proposal(proposed_fact(
                 ContextKey::Constraints,
                 "approval-pending",
                 serde_json::json!({
@@ -546,7 +623,6 @@ impl Suggestor for ApprovalGateSuggestor {
                     "action": "pause",
                 })
                 .to_string(),
-                PROVENANCE,
             ))
         } else {
             AgentEffect::empty()
@@ -597,7 +673,7 @@ impl DataClassificationGateSuggestor {
 #[async_trait::async_trait]
 impl Suggestor for DataClassificationGateSuggestor {
     fn name(&self) -> &'static str {
-        "data-classification-gate"
+        DATA_CLASSIFICATION_GATE_NAME
     }
 
     fn dependencies(&self) -> &[ContextKey] {
@@ -613,6 +689,13 @@ impl Suggestor for DataClassificationGateSuggestor {
     }
 
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
+        let _span = suggestor_span(
+            DATA_CLASSIFICATION_GATE_NAME,
+            self.watched_key,
+            ContextKey::Constraints,
+            ctx.count(self.watched_key),
+        )
+        .entered();
         let facts = ctx.get(self.watched_key);
         let mut proposals = Vec::new();
 
@@ -624,7 +707,7 @@ impl Suggestor for DataClassificationGateSuggestor {
                 }
             }
             if !detected.is_empty() {
-                proposals.push(ProposedFact::new(
+                proposals.push(proposed_fact(
                     ContextKey::Constraints,
                     format!("pii-detected-{}", fact.id()),
                     serde_json::json!({
@@ -634,7 +717,6 @@ impl Suggestor for DataClassificationGateSuggestor {
                         "action": "block",
                     })
                     .to_string(),
-                    PROVENANCE,
                 ));
             }
         }
@@ -684,7 +766,7 @@ impl ComplianceGateSuggestor {
 #[async_trait::async_trait]
 impl Suggestor for ComplianceGateSuggestor {
     fn name(&self) -> &'static str {
-        "compliance-gate"
+        COMPLIANCE_GATE_NAME
     }
 
     fn dependencies(&self) -> &[ContextKey] {
@@ -700,6 +782,13 @@ impl Suggestor for ComplianceGateSuggestor {
     }
 
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
+        let _span = suggestor_span(
+            COMPLIANCE_GATE_NAME,
+            self.watched_key,
+            ContextKey::Constraints,
+            ctx.count(self.watched_key),
+        )
+        .entered();
         let facts = ctx.get(self.watched_key);
         let mut proposals = Vec::new();
 
@@ -722,7 +811,7 @@ impl Suggestor for ComplianceGateSuggestor {
                 };
 
                 if violated {
-                    proposals.push(ProposedFact::new(
+                    proposals.push(proposed_fact(
                         ContextKey::Constraints,
                         format!("compliance-{}-{}", rule.id, fact.id()),
                         serde_json::json!({
@@ -734,7 +823,6 @@ impl Suggestor for ComplianceGateSuggestor {
                             "action": "block",
                         })
                         .to_string(),
-                        PROVENANCE,
                     ));
                 }
             }

@@ -20,6 +20,21 @@ source: mixed
   the `analysis` feature — offline Cedar Analysis evidence.
 - `formation_capabilities()` — Formation-facing capability catalog for
   `arbiter.cedar`.
+- `ProvenanceSource` — typed extension provenance vocabulary used before
+  converting to `converge-pack::ProposedFact`'s current string provenance
+  field.
+
+## Observability
+
+Arbiter suggestors emit an `arbiter.suggestor.execute` tracing span at the
+execution boundary. The `provenance` field is derived from
+`ProvenanceSource::Arbiter`. Current fields are:
+
+- `provenance`
+- `suggestor`
+- `input_key` / `watched_key`
+- `output_key` where applicable
+- `input_count`
 
 ## Formation capability IDs
 

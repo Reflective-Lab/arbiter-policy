@@ -11,12 +11,19 @@ All notable changes to arbiter will be documented in this file.
   `arbiter.cedar.hitl_gate`, and `arbiter.cedar.analysis_evidence`.
 - Added `CedarHitlGateSuggestor` as the explicit strict Cedar-backed HITL gate
   registration point for Formations.
+- Added `arbiter.suggestor.execute` tracing spans around Arbiter suggestor
+  execution boundaries with provenance, suggestor name, context key, and input
+  count fields.
+- Added `ProvenanceSource`, a typed extension provenance vocabulary, and routed
+  Arbiter `ProposedFact` creation through `ProvenanceSource::Arbiter`.
 
 ### Changed
 
 - Tightened HITL escalation: Arbiter now returns `Escalate` only when Cedar
   would allow the same request with `human_approval_present = true`; hard
   policy denials remain `Reject`.
+- Replaced raw Arbiter provenance strings in suggestor proposal construction
+  with the typed provenance adapter.
 
 ## [1.1.0] - 2026-05-07
 

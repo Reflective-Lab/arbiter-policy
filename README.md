@@ -40,6 +40,10 @@ Converge kernel into a policy engine.
   and compliance gate suggestors.
 - Formation-facing capability descriptors for Cedar runtime gates and offline
   analysis evidence.
+- Structured `arbiter.suggestor.execute` tracing spans at suggestor execution
+  boundaries.
+- `ProvenanceSource`, a typed extension provenance vocabulary used at Arbiter's
+  proposal boundary.
 - Ed25519-signed delegation tokens.
 - Reference Cedar policies for expense approval, flow governance, and vendor
   selection.

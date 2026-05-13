@@ -7,6 +7,9 @@ Append an entry on every kb/ change. Format mirrors converge.
 
 | Date | File | Change | Author |
 |------|------|--------|--------|
+| 2026-05-13 | Planning/MILESTONES.md | Marked Cedar Analysis Lane CI wiring complete; added the Analysis (SymCC) job to ci.yml running `cargo test --workspace --all-targets --all-features` | mixed |
+| 2026-05-13 | Architecture/Surface.md | Recorded `ProvenanceSource` as Arbiter's typed proposal-boundary provenance vocabulary | mixed |
+| 2026-05-13 | Architecture/Surface.md | Recorded `arbiter.suggestor.execute` tracing spans at Arbiter suggestor execution boundaries | mixed |
 | 2026-05-13 | Architecture/Cedar Analytics and Formal Evidence.md, Architecture/Surface.md, Planning/MILESTONES.md | Recorded Formation-facing Arbiter capability catalog and explicit `CedarHitlGateSuggestor` surface | mixed |
 | 2026-05-13 | Architecture/Cedar Analytics and Formal Evidence.md | Recorded strict Cedar-backed HITL escalation semantics: only escalate when the approved version of the same request would be allowed | mixed |
 | 2026-05-13 | Architecture/Cedar Analytics and Formal Evidence.md, Planning/MILESTONES.md | Recorded solver-backed Cedar Analysis execution, per-environment statuses, and counterexample capture; left CI solver policy as remaining work | mixed |

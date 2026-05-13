@@ -30,5 +30,5 @@ source: mixed
   Cedar version, and SymCC version.
 - [x] Add solver execution and counterexample capture for selected invariants.
 - [x] Emit full analysis artifacts: solver status and counterexample details.
-- [ ] Wire high-risk policy invariants into CI.
+- [x] Wire high-risk policy invariants into CI.
 - [ ] Revisit custom Lean only for claims Cedar Analysis cannot express.
