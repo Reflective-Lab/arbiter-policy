@@ -8,7 +8,14 @@ license.workspace = true
 description = "Cedar-based Policy Decision Point and policy suggestors for the Converge platform."
 keywords = ["converge", "policy", "cedar", "authorization", "governance"]
 categories = ["authentication"]
-include = ["src/**/*", "policies/**/*", "Cargo.toml", "LICENSE"]
+include = [
+    "src/**/*",
+    "policies/**/*",
+    "schemas/**/*",
+    "invariants/**/*",
+    "Cargo.toml",
+    "LICENSE",
+]
 
 [lib]
 name = "arbiter"
@@ -25,6 +32,7 @@ async-trait.workspace = true
 
 # Policy engine
 cedar-policy.workspace = true
+cedar-policy-symcc = { workspace = true, optional = true }
 
 # HTTP server
 axum.workspace = true
@@ -52,6 +60,10 @@ base64.workspace = true
 [dev-dependencies]
 proptest.workspace = true
 tower.workspace = true
+
+[features]
+default = []
+analysis = ["dep:cedar-policy-symcc"]
 
 [lints]
 workspace = true

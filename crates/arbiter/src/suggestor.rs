@@ -192,6 +192,115 @@ impl Suggestor for DelegationVerifySuggestor {
     }
 }
 
+fn execute_flow_gate(
+    engine: &PolicyEngine,
+    input_key: ContextKey,
+    output_key: ContextKey,
+    proposal_id: &'static str,
+    error_id: &'static str,
+    ctx: &dyn Context,
+) -> AgentEffect {
+    let facts = ctx.get(input_key);
+    let Some(seed) = facts.first() else {
+        return AgentEffect::empty();
+    };
+
+    let input: FlowGateInput = match serde_json::from_str(seed.content()) {
+        Ok(i) => i,
+        Err(e) => {
+            let diag = ProposedFact::new(
+                ContextKey::Diagnostic,
+                error_id,
+                format!("failed to parse FlowGateInput: {e}"),
+                PROVENANCE,
+            );
+            return AgentEffect::with_proposal(diag);
+        }
+    };
+
+    match engine.evaluate_flow(&input) {
+        Ok(decision) => {
+            let content = serde_json::to_string(&decision).unwrap_or_default();
+            let proposal = ProposedFact::new(output_key, proposal_id, content, PROVENANCE);
+            AgentEffect::with_proposal(proposal)
+        }
+        Err(e) => {
+            let diag = ProposedFact::new(
+                ContextKey::Diagnostic,
+                error_id,
+                format!("flow gate evaluation failed: {e}"),
+                PROVENANCE,
+            );
+            AgentEffect::with_proposal(diag)
+        }
+    }
+}
+
+// --- CedarHitlGateSuggestor ---
+
+/// Named Cedar HITL gate surface for Formation registration.
+///
+/// This is intentionally the same Cedar flow authorization path as
+/// [`FlowGateSuggestor`], but exposed under a stricter, discoverable name for
+/// high-risk human-in-the-loop gates. Escalation is emitted only when Cedar
+/// denies the original request and allows the same request with
+/// `human_approval_present = true`.
+pub struct CedarHitlGateSuggestor {
+    engine: Arc<PolicyEngine>,
+    input_key: ContextKey,
+    output_key: ContextKey,
+}
+
+impl CedarHitlGateSuggestor {
+    #[must_use]
+    pub fn new(engine: Arc<PolicyEngine>) -> Self {
+        Self {
+            engine,
+            input_key: ContextKey::Seeds,
+            output_key: ContextKey::Constraints,
+        }
+    }
+
+    #[must_use]
+    pub fn with_keys(
+        engine: Arc<PolicyEngine>,
+        input_key: ContextKey,
+        output_key: ContextKey,
+    ) -> Self {
+        Self {
+            engine,
+            input_key,
+            output_key,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl Suggestor for CedarHitlGateSuggestor {
+    fn name(&self) -> &'static str {
+        "cedar-hitl-gate"
+    }
+
+    fn dependencies(&self) -> &[ContextKey] {
+        std::slice::from_ref(&self.input_key)
+    }
+
+    fn accepts(&self, ctx: &dyn Context) -> bool {
+        ctx.has(self.input_key) && !ctx.has(self.output_key)
+    }
+
+    async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
+        execute_flow_gate(
+            self.engine.as_ref(),
+            self.input_key,
+            self.output_key,
+            "cedar-hitl-gate-decision",
+            "cedar-hitl-gate-error",
+            ctx,
+        )
+    }
+}
+
 // --- FlowGateSuggestor ---
 
 pub struct FlowGateSuggestor {
@@ -239,41 +348,14 @@ impl Suggestor for FlowGateSuggestor {
     }
 
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
-        let facts = ctx.get(self.input_key);
-        let Some(seed) = facts.first() else {
-            return AgentEffect::empty();
-        };
-
-        let input: FlowGateInput = match serde_json::from_str(seed.content()) {
-            Ok(i) => i,
-            Err(e) => {
-                let diag = ProposedFact::new(
-                    ContextKey::Diagnostic,
-                    "flow-gate-error",
-                    format!("failed to parse FlowGateInput: {e}"),
-                    PROVENANCE,
-                );
-                return AgentEffect::with_proposal(diag);
-            }
-        };
-
-        match self.engine.evaluate_flow(&input) {
-            Ok(decision) => {
-                let content = serde_json::to_string(&decision).unwrap_or_default();
-                let proposal =
-                    ProposedFact::new(self.output_key, "flow-gate-decision", content, PROVENANCE);
-                AgentEffect::with_proposal(proposal)
-            }
-            Err(e) => {
-                let diag = ProposedFact::new(
-                    ContextKey::Diagnostic,
-                    "flow-gate-error",
-                    format!("flow gate evaluation failed: {e}"),
-                    PROVENANCE,
-                );
-                AgentEffect::with_proposal(diag)
-            }
-        }
+        execute_flow_gate(
+            self.engine.as_ref(),
+            self.input_key,
+            self.output_key,
+            "flow-gate-decision",
+            "flow-gate-error",
+            ctx,
+        )
     }
 }
 
@@ -665,6 +747,9 @@ impl Suggestor for ComplianceGateSuggestor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use converge_core::{
+        AuthorityLevel, FlowAction, FlowGateContext, FlowGatePrincipal, FlowGateResource, FlowPhase,
+    };
     use converge_pack::{
         ContentHash, ContextFact, FactActor, FactActorKind, FactLocalTrace, FactPromotionRecord,
         FactTraceLink, FactValidationSummary, Timestamp,
@@ -765,6 +850,16 @@ mod tests {
     }
 
     #[test]
+    fn cedar_hitl_gate_name_and_deps() {
+        let engine = Arc::new(
+            PolicyEngine::from_policy_str("permit(principal, action, resource);").unwrap(),
+        );
+        let s = CedarHitlGateSuggestor::new(engine);
+        assert_eq!(s.name(), "cedar-hitl-gate");
+        assert_eq!(s.dependencies(), &[ContextKey::Seeds]);
+    }
+
+    #[test]
     fn flow_gate_rejects_empty_context() {
         let engine = Arc::new(
             PolicyEngine::from_policy_str("permit(principal, action, resource);").unwrap(),
@@ -772,6 +867,60 @@ mod tests {
         let s = FlowGateSuggestor::new(engine);
         let ctx = MockContext::empty();
         assert!(!s.accepts(&ctx));
+    }
+
+    #[tokio::test]
+    async fn cedar_hitl_gate_emits_strict_escalation_decision() {
+        let policy = r#"
+            permit(principal, action == Action::"commit", resource)
+            when { context.human_approval_present == true };
+        "#;
+        let engine = Arc::new(PolicyEngine::from_policy_str(policy).unwrap());
+        let s = CedarHitlGateSuggestor::new(engine);
+        let input = FlowGateInput {
+            principal: FlowGatePrincipal {
+                id: "agent:finance".into(),
+                authority: AuthorityLevel::Supervisory,
+                domains: vec!["finance".into()],
+                policy_version: Some("expense_v1".into()),
+            },
+            resource: FlowGateResource {
+                id: "expense:001".into(),
+                kind: "expense".into(),
+                phase: FlowPhase::Commitment,
+                gates_passed: vec!["receipt".into()],
+            },
+            action: FlowAction::Commit,
+            context: FlowGateContext {
+                commitment_type: Some("expense".into()),
+                amount: Some(1_250),
+                human_approval_present: Some(false),
+                required_gates_met: Some(true),
+            },
+        };
+
+        let mut ctx = MockContext::empty();
+        ctx.facts.insert(
+            ContextKey::Seeds,
+            vec![context_fact(
+                ContextKey::Seeds,
+                "flow-gate-input",
+                serde_json::to_string(&input).unwrap(),
+            )],
+        );
+
+        assert!(s.accepts(&ctx));
+        let effect = s.execute(&ctx).await;
+        assert_eq!(effect.proposals().len(), 1);
+        assert!(
+            effect.proposals()[0]
+                .id
+                .contains("cedar-hitl-gate-decision")
+        );
+
+        let decision: crate::PolicyDecision =
+            serde_json::from_str(effect.proposals()[0].content()).unwrap();
+        assert_eq!(decision.outcome, crate::PolicyOutcome::Escalate);
     }
 
     // ── New gate tests ────────────────────────────────────────────

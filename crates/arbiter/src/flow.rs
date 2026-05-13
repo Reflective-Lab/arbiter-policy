@@ -113,10 +113,8 @@ mod tests {
 
     #[test]
     fn policy_engine_implements_neutral_authorizer_contract() {
-        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("policies/expense_approval.cedar");
-        let policy = std::fs::read_to_string(path).expect("policy should exist");
-        let engine = PolicyEngine::from_policy_str(&policy).expect("policy should parse");
+        let engine = PolicyEngine::from_policy_str(crate::EXPENSE_APPROVAL_POLICY)
+            .expect("policy should parse");
 
         let input = FlowGateInput {
             principal: converge_core::FlowGatePrincipal {

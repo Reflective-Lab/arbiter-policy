@@ -13,6 +13,7 @@ Knowledge base for the `arbiter` Converge extension.
 
 ## Architecture
 
+- [[Architecture/Cedar Analytics and Formal Evidence]] — Cedar analytics first, with Lean and SMT boundaries
 - [[Architecture/Surface]] — public crate surface and contract shape
 
 ## Building

@@ -7,6 +7,7 @@ Major entities in the `arbiter` knowledge base.
 
 ## Architecture
 
+- [Cedar Analytics and Formal Evidence](Architecture/Cedar%20Analytics%20and%20Formal%20Evidence.md) — boundary between Cedar analytics, Lean predicates, SMT, Ferrox, and Prism
 - [Surface](Architecture/Surface.md) — public crate surface and contract shape
 
 ## Building

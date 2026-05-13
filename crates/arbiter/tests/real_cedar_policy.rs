@@ -118,7 +118,26 @@ fn finance_validation_requires_receipt_gate() {
 }
 
 #[test]
-fn finance_supervisor_commit_over_threshold_without_approval_escalates() {
+fn finance_supervisor_commit_low_value_without_approval_escalates() {
+    let engine = expense_engine();
+    let req = expense_request(
+        "supervisory",
+        vec!["finance"],
+        "commit",
+        4_200,
+        false,
+        vec!["receipt", "manager_approval"],
+    );
+
+    let decision = engine
+        .evaluate(&req)
+        .expect("policy evaluation should succeed");
+    assert_eq!(decision.outcome, PolicyOutcome::Escalate);
+}
+
+#[test]
+fn finance_supervisor_commit_over_threshold_without_approval_rejects_when_approval_would_not_allow()
+{
     let engine = expense_engine();
     let req = expense_request(
         "supervisory",
@@ -132,7 +151,7 @@ fn finance_supervisor_commit_over_threshold_without_approval_escalates() {
     let decision = engine
         .evaluate(&req)
         .expect("policy evaluation should succeed");
-    assert_eq!(decision.outcome, PolicyOutcome::Escalate);
+    assert_eq!(decision.outcome, PolicyOutcome::Reject);
 }
 
 #[test]

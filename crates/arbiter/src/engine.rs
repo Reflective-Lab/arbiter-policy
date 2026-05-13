@@ -14,7 +14,6 @@ use thiserror::Error;
 
 use crate::decision::{PolicyDecision, PolicyOutcome};
 use crate::types::{ContextIn, DecideRequest};
-use converge_core::{AuthorityLevel, FlowAction};
 use converge_pack::{DomainId, GateId, PolicyVersionId, ResourceKind};
 
 #[derive(Debug, Error)]
@@ -60,6 +59,29 @@ impl PolicyEngine {
     ///
     /// Returns `Err` if entity or context construction fails.
     pub fn evaluate(&self, req: &DecideRequest) -> Result<PolicyDecision, EngineError> {
+        let evaluation = self.evaluate_cedar(req)?;
+
+        let outcome = match evaluation.decision {
+            cedar_policy::Decision::Allow => PolicyOutcome::Promote,
+            cedar_policy::Decision::Deny => {
+                if self.can_escalate_with_human_approval(req)? {
+                    PolicyOutcome::Escalate
+                } else {
+                    PolicyOutcome::Reject
+                }
+            }
+        };
+
+        Ok(PolicyDecision::policy(
+            outcome,
+            evaluation.reason,
+            req.principal.id.clone(),
+            req.action,
+            req.resource.id.clone(),
+        ))
+    }
+
+    fn evaluate_cedar(&self, req: &DecideRequest) -> Result<CedarEvaluation, EngineError> {
         let ctx = req.context.clone().unwrap_or_default();
 
         // Build principal entity: Suggestor::Persona
@@ -88,7 +110,8 @@ impl PolicyEngine {
                 string_set(req.principal.domains.iter().map(DomainId::to_string)),
             ),
         ]);
-        let principal_entity = Entity::new(p_uid.clone(), p_attrs, HashSet::new());
+        let principal_entity = Entity::new(p_uid.clone(), p_attrs, HashSet::new())
+            .map_err(|e| EngineError::EntityBuild(e.to_string()))?;
 
         // Build resource entity: Flow::Commitment
         let r_type = EntityTypeName::from_str("Flow::Commitment")
@@ -126,10 +149,11 @@ impl PolicyEngine {
                 ),
             ),
         ]);
-        let resource_entity = Entity::new(r_uid.clone(), r_attrs, HashSet::new());
+        let resource_entity = Entity::new(r_uid.clone(), r_attrs, HashSet::new())
+            .map_err(|e| EngineError::EntityBuild(e.to_string()))?;
 
         // Build entities set
-        let entities = Entities::from_entities([principal_entity, resource_entity])
+        let entities = Entities::from_entities([principal_entity, resource_entity], None)
             .map_err(|e| EngineError::EntityBuild(e.to_string()))?;
 
         // Build context as JSON — all decision-relevant facts
@@ -149,21 +173,10 @@ impl PolicyEngine {
             .parse()
             .map_err(|e: cedar_policy::ParseErrors| EngineError::RequestBuild(e.to_string()))?;
 
-        let request = Request::new(Some(p_uid), Some(action_uid), Some(r_uid), context);
+        let request = Request::new(p_uid, action_uid, r_uid, context, None)
+            .map_err(|e| EngineError::RequestBuild(e.to_string()))?;
 
         let response = self.auth.is_authorized(&request, &self.policies, &entities);
-        let cedar_decision = response.decision();
-
-        let outcome = match cedar_decision {
-            cedar_policy::Decision::Allow => PolicyOutcome::Promote,
-            cedar_policy::Decision::Deny => {
-                if should_escalate(req.action, req.principal.authority, &ctx) {
-                    PolicyOutcome::Escalate
-                } else {
-                    PolicyOutcome::Reject
-                }
-            }
-        };
 
         let reasons: Vec<String> = response
             .diagnostics()
@@ -176,40 +189,49 @@ impl PolicyEngine {
             Some(reasons.join(", "))
         };
 
-        Ok(PolicyDecision::policy(
-            outcome,
+        Ok(CedarEvaluation {
+            decision: response.decision(),
             reason,
-            req.principal.id.clone(),
-            req.action,
-            req.resource.id.clone(),
+        })
+    }
+
+    fn can_escalate_with_human_approval(&self, req: &DecideRequest) -> Result<bool, EngineError> {
+        if req
+            .context
+            .as_ref()
+            .and_then(|ctx| ctx.human_approval_present)
+            .unwrap_or(false)
+        {
+            return Ok(false);
+        }
+
+        let mut approval_req = req.clone();
+        approval_req
+            .context
+            .get_or_insert_with(ContextIn::default)
+            .human_approval_present = Some(true);
+
+        Ok(matches!(
+            self.evaluate_cedar(&approval_req)?.decision,
+            cedar_policy::Decision::Allow
         ))
     }
+}
+
+struct CedarEvaluation {
+    decision: cedar_policy::Decision,
+    reason: Option<String>,
 }
 
 fn string_set(values: impl IntoIterator<Item = String>) -> RestrictedExpression {
     RestrictedExpression::new_set(values.into_iter().map(RestrictedExpression::new_string))
 }
 
-/// Determine if a denied action should escalate rather than reject.
-///
-/// Escalation happens when:
-/// - The action is a commitment-level action (commit, promote)
-/// - The principal has authority that could be unlocked with human approval
-/// - Human approval is not yet present
-fn should_escalate(action: FlowAction, authority: AuthorityLevel, ctx: &ContextIn) -> bool {
-    matches!(action, FlowAction::Commit | FlowAction::Promote)
-        && matches!(
-            authority,
-            AuthorityLevel::Supervisory | AuthorityLevel::Participatory
-        )
-        && !ctx.human_approval_present.unwrap_or(false)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::types::{PrincipalIn, ResourceIn};
-    use converge_core::FlowPhase;
+    use converge_core::{AuthorityLevel, FlowAction, FlowPhase};
     use converge_pack::{DomainId, GateId, PolicyVersionId, ResourceKind};
 
     fn test_engine() -> PolicyEngine {

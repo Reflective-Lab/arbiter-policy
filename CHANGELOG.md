@@ -4,6 +4,20 @@ All notable changes to arbiter will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Added Formation-facing Arbiter capability descriptors under the stable
+  `arbiter.cedar` family, including `arbiter.cedar.policy_gate`,
+  `arbiter.cedar.hitl_gate`, and `arbiter.cedar.analysis_evidence`.
+- Added `CedarHitlGateSuggestor` as the explicit strict Cedar-backed HITL gate
+  registration point for Formations.
+
+### Changed
+
+- Tightened HITL escalation: Arbiter now returns `Escalate` only when Cedar
+  would allow the same request with `human_approval_present = true`; hard
+  policy denials remain `Reject`.
+
 ## [1.1.0] - 2026-05-07
 
 ### Changed

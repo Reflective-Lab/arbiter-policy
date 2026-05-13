@@ -33,9 +33,13 @@ Converge kernel into a policy engine.
 ## What Arbiter Owns
 
 - Cedar policy parsing and evaluation.
+- Cedar-first policy assurance through validator results, runtime regression
+  tests, and planned symbolic analysis.
 - Policy decision and outcome types.
 - Policy, flow, delegation, rate-limit, budget, approval, data-classification,
   and compliance gate suggestors.
+- Formation-facing capability descriptors for Cedar runtime gates and offline
+  analysis evidence.
 - Ed25519-signed delegation tokens.
 - Reference Cedar policies for expense approval, flow governance, and vendor
   selection.
@@ -52,11 +56,77 @@ If a type is a reusable policy contract for all Converge users, promote it
 upstream. If it is a Cedar implementation detail or policy-gate behavior, keep
 it here.
 
+## Cedar Analysis Direction
+
+Arbiter should use more of Cedar before adding a separate Lean, Coq, or Agda
+verification layer. Runtime decisions are ordinary policy provenance; symbolic
+analysis results are high-assurance search evidence; only checked proof
+artifacts should be labeled formal verification.
+
+The first Arbiter assurance lane is:
+
+```text
+Gherkin invariant
+  -> Cedar policy/schema validation
+  -> Cedar runtime test
+  -> Cedar Analysis preparation
+  -> solver-backed counterexample or no-violation artifact
+```
+
+Arbiter now runs on the Cedar 4.10 line, matching the Cedar line used by the
+current `cedar-policy-symcc` releases. The optional `analysis` feature adds
+SymCC-backed preparation and execution: parse a Cedar schema, validate a policy
+set, compile every schema request environment, emit stable preparation
+evidence, and then run a caller-supplied solver to produce no-violation,
+unknown, error, or counterexample results.
+
+`execute_analysis_with_cvc5` uses the `CVC5` environment variable first and
+then `cvc5` on `PATH`. Tests use an in-process fake solver so CI does not need
+a local CVC5 install for ordinary validation.
+
+## HITL Escalation Discipline
+
+Arbiter treats human-in-the-loop escalation as a Cedar-governed path, not as a
+fallback for every denial. A denied request becomes `Escalate` only when the
+same request with `human_approval_present = true` would be allowed by Cedar.
+If approval would not change the Cedar decision, Arbiter returns `Reject`.
+
+This keeps hard policy stops hard: missing gates, wrong domain, and actions not
+actually permitted after approval do not become approval tasks.
+
+## Formation Discovery
+
+Formations should discover Arbiter through the capability catalog instead of
+guessing suggestor names.
+
+```rust
+use arbiter::{formation_capabilities, CedarHitlGateSuggestor};
+
+for capability in formation_capabilities() {
+    println!("{} -> {:?}", capability.id, capability.suggestor);
+}
+```
+
+The stable capability family is `arbiter.cedar`.
+
+| Capability | Surface | Evidence tier |
+|---|---|---|
+| `arbiter.cedar.policy_gate` | `PolicyGateSuggestor` / `policy-gate` | `decided` |
+| `arbiter.cedar.hitl_gate` | `CedarHitlGateSuggestor` / `cedar-hitl-gate` | `decided` |
+| `arbiter.cedar.analysis_evidence` | `CedarAnalysisReport` under `analysis` | `searched` |
+
+`CedarHitlGateSuggestor` is the explicit strict-HITL registration point. It
+uses the same Cedar flow authorization path as `FlowGateSuggestor`, but exposes
+a formation-friendly name for high-risk gates.
+
 ## Repository Layout
 
 ```text
 crates/arbiter/
+  invariants/      Human-readable policy invariant fixtures
   policies/        Reference Cedar policies
+  schemas/         Cedar schemas used by analysis and invariant checks
+  src/formation.rs Formation-facing capability descriptors
   src/engine.rs    Cedar policy engine
   src/suggestor.rs Converge suggestors and gates
   src/delegation.rs

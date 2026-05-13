@@ -4,18 +4,33 @@ source: mixed
 ---
 # Surface
 
-`arbiter` exposes one canonical published crate (`arbiter`)
-plus optional adapter crates with adapter-qualified names.
+`arbiter` exposes one canonical published crate,
+`converge-arbiter-policy`, with Rust library name `arbiter`.
 
 ## Public surface
 
-- `arbiter` — _one-line description of the public crate_
+- `PolicyEngine` — Cedar policy evaluation engine.
+- `PolicyGateSuggestor` — runtime Cedar decision suggestor over
+  `DecideRequest`.
+- `FlowGateSuggestor` — flow-level Cedar authorization suggestor.
+- `CedarHitlGateSuggestor` — explicit strict Cedar-backed HITL suggestor for
+  Formations.
+- `DelegationVerifySuggestor` — Ed25519 delegation verification suggestor.
+- `CedarAnalysisInput`, `CedarAnalysisPlan`, and `CedarAnalysisReport` under
+  the `analysis` feature — offline Cedar Analysis evidence.
+- `formation_capabilities()` — Formation-facing capability catalog for
+  `arbiter.cedar`.
+
+## Formation capability IDs
+
+- `arbiter.cedar.policy_gate`
+- `arbiter.cedar.hitl_gate`
+- `arbiter.cedar.analysis_evidence`
 
 ## Contract dependencies
 
-- `converge-pack` — `Pack`, `ProposedPlan`, `ProblemSpec`
-- `converge-model` — semantic types
-- `converge-provider` — capability identity (when applicable)
+- `converge-pack` — `Suggestor`, context facts, and promotion records.
+- `converge-core` — stable flow gate vocabulary and `FlowGateAuthorizer`.
 
 ## Forbidden imports
 

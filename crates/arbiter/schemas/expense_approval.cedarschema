@@ -1,0 +1,26 @@
+namespace Suggestor {
+  entity Persona = {
+    authority: String,
+    domains: Set<String>,
+    policy_version: String,
+  };
+}
+
+namespace Flow {
+  entity Commitment = {
+    resource_type: String,
+    phase: String,
+    gates_passed: Set<String>,
+  };
+}
+
+action propose, validate, promote, commit appliesTo {
+  principal: [Suggestor::Persona],
+  resource: [Flow::Commitment],
+  context: {
+    commitment_type: String,
+    amount: Long,
+    human_approval_present: Bool,
+    required_gates_met: Bool,
+  }
+};

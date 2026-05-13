@@ -21,23 +21,39 @@
 //! - [`PolicyGateSuggestor`] — Cedar policy evaluation
 //! - [`DelegationVerifySuggestor`] — Ed25519 delegation chain verification
 //! - [`FlowGateSuggestor`] — Flow-level authorization gates
+//! - [`CedarHitlGateSuggestor`] — named strict Cedar-backed HITL gate for Formations
 
 // ── Public API: Suggestors + construction types ───────────────────────
 
+#[cfg(feature = "analysis")]
+pub mod analysis;
 pub mod engine;
+pub mod formation;
 pub mod suggestor;
 pub mod types;
 
+#[cfg(feature = "analysis")]
+pub use analysis::{
+    CedarAnalysisCheck, CedarAnalysisError, CedarAnalysisExecutionStatus, CedarAnalysisInput,
+    CedarAnalysisPlan, CedarAnalysisQuery, CedarAnalysisReport, CedarRequestEnvironmentAnalysis,
+    compile_analysis_plan, execute_analysis_with_cvc5, execute_analysis_with_solver,
+};
 pub use engine::PolicyEngine;
+pub use formation::{
+    ANALYSIS_EVIDENCE_CAPABILITY_ID, ARBITER_FORMATION_CAPABILITIES, ARBITER_FORMATION_PACK_ID,
+    ArbiterFormationCapability, ArbiterFormationCapabilityKind, HITL_GATE_CAPABILITY_ID,
+    POLICY_GATE_CAPABILITY_ID, find_formation_capability, formation_capabilities,
+};
 pub use suggestor::{
-    ApprovalGateSuggestor, BudgetGateSuggestor, ComplianceCondition, ComplianceGateSuggestor,
-    ComplianceRule, DataClassificationGateSuggestor, DelegationVerifySuggestor, FlowGateSuggestor,
-    PolicyGateSuggestor, RateLimitGateSuggestor,
+    ApprovalGateSuggestor, BudgetGateSuggestor, CedarHitlGateSuggestor, ComplianceCondition,
+    ComplianceGateSuggestor, ComplianceRule, DataClassificationGateSuggestor,
+    DelegationVerifySuggestor, FlowGateSuggestor, PolicyGateSuggestor, RateLimitGateSuggestor,
 };
 pub use types::{ContextIn, DecideRequest, PrincipalIn, ResourceIn};
 
 /// Built-in Cedar policies for reference and testing.
 pub const EXPENSE_APPROVAL_POLICY: &str = include_str!("../policies/expense_approval.cedar");
+pub const EXPENSE_APPROVAL_SCHEMA: &str = include_str!("../schemas/expense_approval.cedarschema");
 pub const FLOW_GOVERNANCE_POLICY: &str = include_str!("../policies/flow_governance.cedar");
 pub const VENDOR_SELECTION_POLICY: &str = include_str!("../policies/vendor_selection.cedar");
 

@@ -53,7 +53,7 @@ fn supervisory_can_promote_without_approval() {
 }
 
 #[test]
-fn participatory_promotion_escalates_without_approval() {
+fn participatory_promotion_without_approval_rejects_when_approval_would_not_allow() {
     let engine = test_engine();
     let req = make_request("participatory", "promote");
 
@@ -61,7 +61,7 @@ fn participatory_promotion_escalates_without_approval() {
         .evaluate(&req)
         .expect("policy evaluation should succeed");
 
-    assert_eq!(decision.outcome, PolicyOutcome::Escalate);
+    assert_eq!(decision.outcome, PolicyOutcome::Reject);
 }
 
 #[test]
