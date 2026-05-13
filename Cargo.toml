@@ -15,7 +15,7 @@ converge-core = "3.8.1"
 converge-pack = "3.8.1"
 
 # Policy engine
-cedar-policy = "2.4"
+cedar-policy = "4.10"
 
 # HTTP server
 axum = { version = "0.8", features = ["macros"] }
