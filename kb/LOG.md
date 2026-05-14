@@ -7,6 +7,7 @@ Append an entry on every kb/ change. Format mirrors converge.
 
 | Date | File | Change | Author |
 |------|------|--------|--------|
+| 2026-05-13 | Architecture/Cedar Analytics and Formal Evidence.md, Planning/MILESTONES.md, README.md, .github/workflows/ci.yml | Recorded explicit CVC5 policy: fake-solver SymCC tests are required, real CVC5 is scheduled/manual smoke until conditional invariant queries exist | mixed |
 | 2026-05-13 | Planning/MILESTONES.md | Marked Cedar Analysis Lane CI wiring complete; added the Analysis (SymCC) job to ci.yml running `cargo test --workspace --all-targets --all-features` | mixed |
 | 2026-05-13 | Architecture/Surface.md | Recorded `ProvenanceSource` as Arbiter's typed proposal-boundary provenance vocabulary | mixed |
 | 2026-05-13 | Architecture/Surface.md | Recorded `arbiter.suggestor.execute` tracing spans at Arbiter suggestor execution boundaries | mixed |

@@ -88,6 +88,26 @@ unknown, error, or counterexample results.
 then `cvc5` on `PATH`. Tests use an in-process fake solver so CI does not need
 a local CVC5 install for ordinary validation.
 
+### CVC5 CI Policy
+
+CVC5 support currently means Arbiter can hand SymCC-generated SMT assertions to
+a local `cvc5` binary and return a Cedar Analysis report. It is `Searched`
+evidence. It is not a proof layer, and the current broad query shape is not yet
+a conditional proof of the human-readable Arbiter invariant.
+
+The CI policy is:
+
+- **Required PR/push CI:** build and test the `analysis` feature with the
+  in-process fake solver. This proves schema validation, symbolic compilation,
+  report shaping, status mapping, and counterexample plumbing without requiring
+  CVC5 on every runner.
+- **Nightly/manual CI:** install and run real `cvc5` against the ignored smoke
+  test. This checks the external solver path and SymCC/CVC5 compatibility.
+- **Not yet required:** treating a real CVC5 result as policy-invariant
+  assurance. That becomes useful only after Arbiter has conditional invariant
+  queries that encode the actual claim, such as non-finance high-value expense
+  commit rejection.
+
 ## HITL Escalation Discipline
 
 Arbiter treats human-in-the-loop escalation as a Cedar-governed path, not as a

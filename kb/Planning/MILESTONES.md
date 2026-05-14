@@ -30,5 +30,9 @@ source: mixed
   Cedar version, and SymCC version.
 - [x] Add solver execution and counterexample capture for selected invariants.
 - [x] Emit full analysis artifacts: solver status and counterexample details.
-- [x] Wire high-risk policy invariants into CI.
+- [x] Wire high-risk policy invariants into required CI through fake-solver
+  SymCC tests that do not need local CVC5.
+- [x] Add scheduled/manual real-CVC5 smoke CI for solver-path compatibility.
+- [ ] Add conditional invariant queries for actual Arbiter claims before real
+  CVC5 results are treated as invariant assurance.
 - [ ] Revisit custom Lean only for claims Cedar Analysis cannot express.

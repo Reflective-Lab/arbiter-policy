@@ -95,6 +95,29 @@ compilation, stable preparation hashes, solver execution, and counterexample
 capture. Solver execution accepts a caller-supplied SymCC solver; the CVC5
 helper resolves `CVC5` first and then `cvc5` on `PATH`.
 
+## CVC5 CI Policy
+
+CVC5 support currently means Arbiter can execute SymCC-generated SMT assertions
+with a local CVC5 process and map the result into a `CedarAnalysisReport`.
+That is useful integration evidence, but it is still `Searched` evidence and
+not formal proof evidence.
+
+The policy is explicit:
+
+- Required PR/push CI runs `cargo test --workspace --all-targets --all-features`.
+  These tests use a fake in-process solver so every runner can validate SymCC
+  compilation, status mapping, report shaping, and counterexample capture.
+- Real CVC5 runs only in scheduled/manual CI through an ignored smoke test. It
+  catches external solver drift and CVC5/SymCC compatibility breaks.
+- Real CVC5 does not become a required policy-invariant gate until Arbiter has
+  conditional invariant queries for actual claims. The current broad
+  `AlwaysDenies`/`AlwaysAllows` queries validate the analysis lane, not the
+  full natural-language invariant.
+
+The first useful conditional query should target the existing expense claim:
+non-finance principals cannot commit high-value expense resources even when
+receipt, manager approval, and explicit human approval are present.
+
 ## Ferrox Boundary
 
 `ferrox-solvers` is an optimization and feasibility extension, not a general
@@ -240,8 +263,10 @@ This fixture can become:
 3. Add optional Cedar Analysis preparation backed by the symbolic compiler.
 4. Add solver execution and counterexample capture for selected invariants.
 5. Emit pinned analysis artifacts as ordinary evidence.
-6. Wire selected high-risk invariants into CI with an explicit solver policy.
-7. Revisit custom Lean only for claims Cedar Analysis cannot express.
+6. Add conditional Cedar Analysis queries for selected high-risk invariants.
+7. Promote real CVC5 from nightly smoke to required invariant evidence only
+   when those conditional queries encode actual Arbiter claims.
+8. Revisit custom Lean only for claims Cedar Analysis cannot express.
 
 ## Non-Goals For The First Step
 

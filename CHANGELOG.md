@@ -16,6 +16,8 @@ All notable changes to arbiter will be documented in this file.
   count fields.
 - Added `ProvenanceSource`, a typed extension provenance vocabulary, and routed
   Arbiter `ProposedFact` creation through `ProvenanceSource::Arbiter`.
+- Added an ignored real-CVC5 Cedar Analysis smoke test plus scheduled/manual CI
+  wiring; required CI continues to use fake-solver SymCC tests.
 
 ### Changed
 
