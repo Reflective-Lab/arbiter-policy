@@ -4,6 +4,8 @@ All notable changes to arbiter will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-05-14
+
 ### Added
 
 - Added Formation-facing Arbiter capability descriptors under the stable
@@ -30,6 +32,8 @@ All notable changes to arbiter will be documented in this file.
   with the typed provenance adapter.
 - Rate-limit gate tracing now emits the same `input_key` and `output_key`
   fields as other Arbiter suggestor spans.
+- Release profiling now skips Criterion baseline generation cleanly when no
+  benchmark targets are configured.
 
 ## [1.1.0] - 2026-05-07
 

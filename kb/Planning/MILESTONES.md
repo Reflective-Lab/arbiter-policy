@@ -5,20 +5,20 @@ source: mixed
 
 > See `~/dev/reflective/stack/bedrock-platform/EPIC.md` for the coarse-grained outcomes these milestones advance.
 
-## Current: v1.0.0 — Converge 3.8.1 Policy Foundation
+## Current: v1.1.1 — Converge 3.8.1 Policy Foundation
 
 **Target:** 2026-05 | **Tracks:** Converge 3.8.1
 
-- [ ] Keep workspace package version at `1.0.0`.
-- [ ] Keep Converge dependencies on the `3.8.1` contract baseline.
-- [ ] Adopt Extension Release Checklist (security-audit, coverage, performance-profile, soak)
+- [x] Keep workspace package version at `1.1.1`.
+- [x] Keep Converge dependencies on the `3.8.1` contract baseline.
+- [x] Adopt Extension Release Checklist (security-audit, coverage, performance-profile, soak)
 - [x] Add the first Cedar-first invariant fixture and runtime regression test.
 - [x] Plan the Cedar 4.x upgrade required before adding `cedar-policy-symcc`.
 - [x] Upgrade Arbiter from Cedar 2.4 to Cedar 4.10.
 - [x] Add Formation-facing `arbiter.cedar` capability descriptors and the
   explicit `CedarHitlGateSuggestor` surface.
-- [ ] First clean `just release-check` run
-- [ ] Tag v1.0.0
+- [x] First clean `just release-check` run
+- [x] Tag v1.1.1
 
 ## Next: Cedar Analysis Lane
 
@@ -33,6 +33,6 @@ source: mixed
 - [x] Wire high-risk policy invariants into required CI through fake-solver
   SymCC tests that do not need local CVC5.
 - [x] Add scheduled/manual real-CVC5 smoke CI for solver-path compatibility.
-- [ ] Add conditional invariant queries for actual Arbiter claims before real
+- [x] Add conditional invariant queries for actual Arbiter claims before real
   CVC5 results are treated as invariant assurance.
 - [ ] Revisit custom Lean only for claims Cedar Analysis cannot express.

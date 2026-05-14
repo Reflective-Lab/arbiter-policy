@@ -111,6 +111,12 @@ performance-profile:
         fi
     fi
     echo "performance-profile: ${mode_flag} ${name}"
+    bench_target="$(find benches crates -path '*/benches/*.rs' -print -quit 2>/dev/null || true)"
+    if [ -z "${bench_target}" ]; then
+        echo "performance-profile: no Criterion benches configured; skipping baseline"
+        echo "performance-profile: criterion→target/criterion/"
+        exit 0
+    fi
     cargo bench --workspace -- "${mode_flag}" "${name}" || true
     if [ -f scripts/extract-criterion-baseline.py ]; then
         python3 scripts/extract-criterion-baseline.py || \
