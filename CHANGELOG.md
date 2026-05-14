@@ -26,6 +26,8 @@ All notable changes to arbiter will be documented in this file.
   policy denials remain `Reject`.
 - Replaced raw Arbiter provenance strings in suggestor proposal construction
   with the typed provenance adapter.
+- Rate-limit gate tracing now emits the same `input_key` and `output_key`
+  fields as other Arbiter suggestor spans.
 
 ## [1.1.0] - 2026-05-07
 

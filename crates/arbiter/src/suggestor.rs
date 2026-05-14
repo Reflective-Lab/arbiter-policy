@@ -48,12 +48,15 @@ fn suggestor_span(
 fn watched_suggestor_span(
     name: &'static str,
     watched_key: ContextKey,
+    output_key: ContextKey,
     input_count: usize,
 ) -> tracing::Span {
     info_span!(
         "arbiter.suggestor.execute",
         provenance = PROVENANCE_SOURCE.as_str(),
         suggestor = name,
+        input_key = ?watched_key,
+        output_key = ?output_key,
         watched_key = ?watched_key,
         input_count
     )
@@ -459,6 +462,7 @@ impl Suggestor for RateLimitGateSuggestor {
         let _span = watched_suggestor_span(
             RATE_LIMIT_GATE_NAME,
             self.watched_key,
+            ContextKey::Constraints,
             ctx.count(self.watched_key),
         )
         .entered();

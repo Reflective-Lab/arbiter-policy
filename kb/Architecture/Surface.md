@@ -32,8 +32,8 @@ execution boundary. The `provenance` field is derived from
 
 - `provenance`
 - `suggestor`
-- `input_key` / `watched_key`
-- `output_key` where applicable
+- `input_key`
+- `output_key`
 - `input_count`
 
 ## Formation capability IDs
