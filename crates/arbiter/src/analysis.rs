@@ -10,6 +10,7 @@ use std::str::FromStr;
 use cedar_policy::{PolicySet, RequestEnv, Schema, ValidationMode, Validator};
 use cedar_policy_symcc::{
     CedarSymCompiler, CompiledPolicySet, always_allows_asserts, always_denies_asserts,
+    disjoint_asserts,
     err::Error as SymccError,
     solver::{LocalSolver, Solver},
 };
@@ -19,6 +20,19 @@ use thiserror::Error;
 const CEDAR_SYMCC_VERSION: &str = "0.4";
 const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+const EXPENSE_NON_FINANCE_HIGH_VALUE_COMMIT_CLAIM_POLICY: &str = r#"
+permit(principal, action == Action::"commit", resource)
+when {
+  resource.resource_type == "expense" &&
+  principal.domains.contains("finance") == false &&
+  principal.authority == "supervisory" &&
+  context.amount > 5000 &&
+  context.human_approval_present == true &&
+  resource.gates_passed.contains("receipt") &&
+  resource.gates_passed.contains("manager_approval") &&
+  context.required_gates_met == true
+};
+"#;
 
 /// The symbolic query shape Arbiter can prepare without invoking an SMT solver.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -30,6 +44,13 @@ pub enum CedarAnalysisQuery {
     /// Generate an assertion set whose unsatisfiability means every modeled
     /// request is denied by the policy set.
     AlwaysDenies,
+    /// Generate an assertion set whose unsatisfiability means no modeled
+    /// request matching the high-risk Arbiter expense claim is allowed by the
+    /// policy set. The claim is:
+    /// non-finance supervisory principals cannot commit high-value expenses
+    /// even when receipt, manager approval, required gates, and human approval
+    /// are present.
+    ExpenseNonFinanceHighValueCommitDenied,
 }
 
 /// Input for a Cedar symbolic-analysis preparation run.
@@ -197,20 +218,39 @@ pub fn compile_analysis_plan(
     let schema = parse_schema(&input.schema_source)?;
     let policies = parse_policy_set(&input.policy_source)?;
     validate_policy_set(&schema, &policies)?;
+    let query_policies = parse_query_policy_set(input.query)?;
+    if let Some(query_policies) = &query_policies {
+        validate_policy_set(&schema, query_policies)?;
+    }
 
     let request_environments = schema
         .request_envs()
         .map(|request_env| {
             let compiled = CompiledPolicySet::compile(&policies, &request_env, &schema)
                 .map_err(|err| CedarAnalysisError::Compile(format!("{err:?}")))?;
-            let assertions = match input.query {
-                CedarAnalysisQuery::AlwaysAllows => always_allows_asserts(&compiled),
-                CedarAnalysisQuery::AlwaysDenies => always_denies_asserts(&compiled),
+            let assertion_count = match input.query {
+                CedarAnalysisQuery::AlwaysAllows => {
+                    always_allows_asserts(&compiled).asserts().len()
+                }
+                CedarAnalysisQuery::AlwaysDenies => {
+                    always_denies_asserts(&compiled).asserts().len()
+                }
+                CedarAnalysisQuery::ExpenseNonFinanceHighValueCommitDenied => {
+                    let query_policies = query_policies.as_ref().ok_or_else(|| {
+                        CedarAnalysisError::Compile(
+                            "conditional expense claim policy was not prepared".to_string(),
+                        )
+                    })?;
+                    let compiled_query =
+                        CompiledPolicySet::compile(query_policies, &request_env, &schema)
+                            .map_err(|err| CedarAnalysisError::Compile(format!("{err:?}")))?;
+                    disjoint_asserts(&compiled, &compiled_query).asserts().len()
+                }
             };
 
             Ok(CedarRequestEnvironmentAnalysis::from_request_env(
                 &request_env,
-                assertions.asserts().len(),
+                assertion_count,
             ))
         })
         .collect::<Result<Vec<_>, CedarAnalysisError>>()?;
@@ -245,6 +285,10 @@ pub async fn execute_analysis_with_solver<S: Solver>(
     let schema = parse_schema(&input.schema_source)?;
     let policies = parse_policy_set(&input.policy_source)?;
     validate_policy_set(&schema, &policies)?;
+    let query_policies = parse_query_policy_set(input.query)?;
+    if let Some(query_policies) = &query_policies {
+        validate_policy_set(&schema, query_policies)?;
+    }
     let mut compiler = CedarSymCompiler::new(solver)
         .map_err(|err| CedarAnalysisError::SolverInit(err.to_string()))?;
 
@@ -252,16 +296,34 @@ pub async fn execute_analysis_with_solver<S: Solver>(
     for request_env in schema.request_envs() {
         let compiled = CompiledPolicySet::compile(&policies, &request_env, &schema)
             .map_err(|err| CedarAnalysisError::Compile(format!("{err:?}")))?;
-        let assertions = match input.query {
-            CedarAnalysisQuery::AlwaysAllows => always_allows_asserts(&compiled),
-            CedarAnalysisQuery::AlwaysDenies => always_denies_asserts(&compiled),
+        let solver_result = match input.query {
+            CedarAnalysisQuery::AlwaysAllows => {
+                let assertions = always_allows_asserts(&compiled);
+                compiler.check_sat(&assertions).await
+            }
+            CedarAnalysisQuery::AlwaysDenies => {
+                let assertions = always_denies_asserts(&compiled);
+                compiler.check_sat(&assertions).await
+            }
+            CedarAnalysisQuery::ExpenseNonFinanceHighValueCommitDenied => {
+                let query_policies = query_policies.as_ref().ok_or_else(|| {
+                    CedarAnalysisError::Compile(
+                        "conditional expense claim policy was not prepared".to_string(),
+                    )
+                })?;
+                let compiled_query =
+                    CompiledPolicySet::compile(query_policies, &request_env, &schema)
+                        .map_err(|err| CedarAnalysisError::Compile(format!("{err:?}")))?;
+                let assertions = disjoint_asserts(&compiled, &compiled_query);
+                compiler.check_sat(&assertions).await
+            }
         };
         let environment = CedarRequestEnvironmentAnalysis::from_request_env(
             &request_env,
-            assertions.asserts().len(),
+            plan.request_environments[checks.len()].assertion_count,
         );
 
-        let check = match compiler.check_sat(&assertions).await {
+        let check = match solver_result {
             Ok(None) => CedarAnalysisCheck {
                 environment,
                 status: CedarAnalysisExecutionStatus::NoViolation,
@@ -340,6 +402,17 @@ fn parse_policy_set(source: &str) -> Result<PolicySet, CedarAnalysisError> {
     PolicySet::from_str(source).map_err(|err| CedarAnalysisError::PolicyParse(format!("{err:?}")))
 }
 
+fn parse_query_policy_set(
+    query: CedarAnalysisQuery,
+) -> Result<Option<PolicySet>, CedarAnalysisError> {
+    match query {
+        CedarAnalysisQuery::AlwaysAllows | CedarAnalysisQuery::AlwaysDenies => Ok(None),
+        CedarAnalysisQuery::ExpenseNonFinanceHighValueCommitDenied => {
+            parse_policy_set(EXPENSE_NON_FINANCE_HIGH_VALUE_COMMIT_CLAIM_POLICY).map(Some)
+        }
+    }
+}
+
 fn validate_policy_set(schema: &Schema, policies: &PolicySet) -> Result<(), CedarAnalysisError> {
     let result = Validator::new(schema.clone()).validate(policies, ValidationMode::Strict);
     if result.validation_passed() {
@@ -354,11 +427,41 @@ fn stable_hash(value: &str) -> String {
 }
 
 fn stable_query_hash(invariant_id: &str, query: CedarAnalysisQuery) -> String {
-    let query = match query {
-        CedarAnalysisQuery::AlwaysAllows => "always_allows",
-        CedarAnalysisQuery::AlwaysDenies => "always_denies",
-    };
-    format_hash(fnv1a([invariant_id.as_bytes(), b"\0", query.as_bytes()]))
+    match query.policy_source() {
+        Some(policy_source) => format_hash(fnv1a([
+            invariant_id.as_bytes(),
+            b"\0",
+            query.stable_label().as_bytes(),
+            b"\0",
+            policy_source.as_bytes(),
+        ])),
+        None => format_hash(fnv1a([
+            invariant_id.as_bytes(),
+            b"\0",
+            query.stable_label().as_bytes(),
+        ])),
+    }
+}
+
+impl CedarAnalysisQuery {
+    const fn stable_label(self) -> &'static str {
+        match self {
+            Self::AlwaysAllows => "always_allows",
+            Self::AlwaysDenies => "always_denies",
+            Self::ExpenseNonFinanceHighValueCommitDenied => {
+                "expense_non_finance_high_value_commit_denied"
+            }
+        }
+    }
+
+    const fn policy_source(self) -> Option<&'static str> {
+        match self {
+            Self::AlwaysAllows | Self::AlwaysDenies => None,
+            Self::ExpenseNonFinanceHighValueCommitDenied => {
+                Some(EXPENSE_NON_FINANCE_HIGH_VALUE_COMMIT_CLAIM_POLICY)
+            }
+        }
+    }
 }
 
 fn fnv1a<const N: usize>(parts: [&[u8]; N]) -> u64 {

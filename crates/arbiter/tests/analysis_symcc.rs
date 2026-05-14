@@ -73,6 +73,15 @@ fn expense_input(invariant_id: impl Into<String>) -> CedarAnalysisInput {
     )
 }
 
+fn expense_high_risk_claim_input() -> CedarAnalysisInput {
+    CedarAnalysisInput::new(
+        INVARIANT_ID,
+        CedarAnalysisQuery::ExpenseNonFinanceHighValueCommitDenied,
+        EXPENSE_APPROVAL_POLICY,
+        EXPENSE_APPROVAL_SCHEMA,
+    )
+}
+
 fn permit_all_input() -> CedarAnalysisInput {
     CedarAnalysisInput::new(
         "simple.permit_all.must_not_always_deny",
@@ -95,6 +104,30 @@ fn compiles_expense_policy_for_symbolic_analysis() {
     assert!(plan.policy_hash.starts_with("fnv1a64:"));
     assert!(plan.schema_hash.starts_with("fnv1a64:"));
     assert!(plan.query_hash.starts_with("fnv1a64:"));
+    assert!(
+        plan.request_environments
+            .iter()
+            .all(|env| env.assertion_count > 0)
+    );
+    assert!(
+        plan.request_environments
+            .iter()
+            .any(|env| env.action == "Action::\"commit\"")
+    );
+}
+
+#[test]
+fn compiles_conditional_expense_claim_for_symbolic_analysis() {
+    let plan = compile_analysis_plan(&expense_high_risk_claim_input())
+        .expect("conditional expense claim should compile for Cedar symbolic analysis");
+
+    assert_eq!(plan.invariant_id, INVARIANT_ID);
+    assert_eq!(
+        plan.query,
+        CedarAnalysisQuery::ExpenseNonFinanceHighValueCommitDenied
+    );
+    assert_eq!(plan.policy_count, 11);
+    assert_eq!(plan.request_env_count(), 4);
     assert!(
         plan.request_environments
             .iter()
@@ -157,6 +190,12 @@ fn query_shape_changes_query_hash() {
     assert_ne!(denies.query_hash, allows.query_hash);
     assert_eq!(denies.policy_hash, allows.policy_hash);
     assert_eq!(denies.schema_hash, allows.schema_hash);
+
+    let conditional = compile_analysis_plan(&expense_high_risk_claim_input())
+        .expect("conditional claim plan should compile");
+    assert_ne!(denies.query_hash, conditional.query_hash);
+    assert_eq!(denies.policy_hash, conditional.policy_hash);
+    assert_eq!(denies.schema_hash, conditional.schema_hash);
 }
 
 #[tokio::test]
@@ -168,6 +207,28 @@ async fn solver_execution_reports_no_violation_when_solver_returns_unsat() {
 
     assert_eq!(report.status, CedarAnalysisExecutionStatus::NoViolation);
     assert_eq!(report.checks.len(), report.plan.request_env_count());
+    assert!(
+        report
+            .checks
+            .iter()
+            .all(|check| check.status == CedarAnalysisExecutionStatus::NoViolation)
+    );
+}
+
+#[tokio::test]
+async fn conditional_expense_claim_reports_no_violation_when_solver_returns_unsat() {
+    let report = execute_analysis_with_solver(
+        &expense_high_risk_claim_input(),
+        FixedDecisionSolver::unsat(),
+    )
+    .await
+    .expect("conditional solver-backed execution should produce a report");
+
+    assert_eq!(report.status, CedarAnalysisExecutionStatus::NoViolation);
+    assert_eq!(
+        report.plan.query,
+        CedarAnalysisQuery::ExpenseNonFinanceHighValueCommitDenied
+    );
     assert!(
         report
             .checks

@@ -109,14 +109,21 @@ The policy is explicit:
   compilation, status mapping, report shaping, and counterexample capture.
 - Real CVC5 runs only in scheduled/manual CI through an ignored smoke test. It
   catches external solver drift and CVC5/SymCC compatibility breaks.
-- Real CVC5 does not become a required policy-invariant gate until Arbiter has
-  conditional invariant queries for actual claims. The current broad
-  `AlwaysDenies`/`AlwaysAllows` queries validate the analysis lane, not the
-  full natural-language invariant.
+- Real CVC5 invariant assurance must use conditional invariant queries for
+  actual claims. Broad `AlwaysDenies`/`AlwaysAllows` queries still validate the
+  analysis lane, but they do not by themselves support a full
+  natural-language invariant.
 
 The first useful conditional query should target the existing expense claim:
 non-finance principals cannot commit high-value expense resources even when
 receipt, manager approval, and explicit human approval are present.
+
+Arbiter now exposes that first query as
+`ExpenseNonFinanceHighValueCommitDenied`. It builds a Cedar policy describing
+the high-risk claim space and asks SymCC/CVC5 whether that policy is disjoint
+from the real expense approval policy's allowed requests. `NoViolation` means
+the solver found no modeled request that both satisfies the claim condition and
+is allowed by the real policy.
 
 ## Ferrox Boundary
 

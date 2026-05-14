@@ -10,7 +10,7 @@ const INVARIANT_ID: &str = "expense.non_finance_commit.high_value";
 fn expense_input() -> CedarAnalysisInput {
     CedarAnalysisInput::new(
         INVARIANT_ID,
-        CedarAnalysisQuery::AlwaysDenies,
+        CedarAnalysisQuery::ExpenseNonFinanceHighValueCommitDenied,
         EXPENSE_APPROVAL_POLICY,
         EXPENSE_APPROVAL_SCHEMA,
     )
@@ -18,12 +18,16 @@ fn expense_input() -> CedarAnalysisInput {
 
 #[tokio::test]
 #[ignore = "requires a local cvc5 binary; run only in scheduled/manual solver CI"]
-async fn cvc5_smoke_reports_status_for_broad_expense_analysis() {
+async fn cvc5_smoke_proves_conditional_expense_claim_has_no_violation() {
     let report = execute_analysis_with_cvc5(&expense_input())
         .await
         .expect("CVC5-backed Cedar Analysis should produce a report");
 
     assert_eq!(report.plan.invariant_id, INVARIANT_ID);
+    assert_eq!(
+        report.plan.query,
+        CedarAnalysisQuery::ExpenseNonFinanceHighValueCommitDenied
+    );
     assert!(report.plan.request_env_count() > 0);
     assert!(!report.checks.is_empty());
     assert!(
@@ -33,10 +37,5 @@ async fn cvc5_smoke_reports_status_for_broad_expense_analysis() {
             .all(|check| check.status != CedarAnalysisExecutionStatus::Error),
         "CVC5 smoke should not produce solver/concretization errors: {report:#?}"
     );
-    assert!(matches!(
-        report.status,
-        CedarAnalysisExecutionStatus::NoViolation
-            | CedarAnalysisExecutionStatus::CounterexampleFound
-            | CedarAnalysisExecutionStatus::Unknown
-    ));
+    assert_eq!(report.status, CedarAnalysisExecutionStatus::NoViolation);
 }

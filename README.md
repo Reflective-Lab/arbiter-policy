@@ -92,8 +92,9 @@ a local CVC5 install for ordinary validation.
 
 CVC5 support currently means Arbiter can hand SymCC-generated SMT assertions to
 a local `cvc5` binary and return a Cedar Analysis report. It is `Searched`
-evidence. It is not a proof layer, and the current broad query shape is not yet
-a conditional proof of the human-readable Arbiter invariant.
+evidence. It is not a proof layer. Invariant-assurance runs must use a
+conditional query that encodes the actual Arbiter claim being checked, not only
+the broad `AlwaysDenies` or `AlwaysAllows` query shapes.
 
 The CI policy is:
 
@@ -102,11 +103,12 @@ The CI policy is:
   report shaping, status mapping, and counterexample plumbing without requiring
   CVC5 on every runner.
 - **Nightly/manual CI:** install and run real `cvc5` against the ignored smoke
-  test. This checks the external solver path and SymCC/CVC5 compatibility.
-- **Not yet required:** treating a real CVC5 result as policy-invariant
-  assurance. That becomes useful only after Arbiter has conditional invariant
-  queries that encode the actual claim, such as non-finance high-value expense
-  commit rejection.
+  test. The smoke uses the conditional
+  `ExpenseNonFinanceHighValueCommitDenied` query and must return
+  `NoViolation` before that result is useful as invariant assurance.
+- **Integration only:** broad `AlwaysDenies` or `AlwaysAllows` results may
+  validate the analysis lane, but they must not be treated as assurance for a
+  human-readable high-risk invariant.
 
 ## HITL Escalation Discipline
 
