@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 use converge_core::FlowAction;
-use converge_pack::{PrincipalId, ResourceId};
+use converge_pack::{FactPayload, PrincipalId, ResourceId};
 
 /// Outcome of a policy evaluation, aligned with converge-core's `GateDecision`.
 ///
@@ -36,7 +36,8 @@ impl PolicyOutcome {
 }
 
 /// Full policy decision with rationale and audit trail
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PolicyDecision {
     /// The outcome
     pub outcome: PolicyOutcome,
@@ -50,6 +51,11 @@ pub struct PolicyDecision {
     pub action: FlowAction,
     /// The resource that was targeted
     pub resource_id: ResourceId,
+}
+
+impl FactPayload for PolicyDecision {
+    const FAMILY: &'static str = "arbiter.policy_decision";
+    const VERSION: u16 = 1;
 }
 
 /// How the decision was reached

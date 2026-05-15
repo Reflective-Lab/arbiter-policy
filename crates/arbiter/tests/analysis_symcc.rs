@@ -2,10 +2,13 @@
 
 use arbiter::{
     CedarAnalysisError, CedarAnalysisExecutionStatus, CedarAnalysisInput, CedarAnalysisQuery,
-    EXPENSE_APPROVAL_POLICY, EXPENSE_APPROVAL_SCHEMA, compile_analysis_plan,
-    execute_analysis_with_solver,
+    ContextIn, DecideRequest, EXPENSE_APPROVAL_POLICY, EXPENSE_APPROVAL_SCHEMA,
+    EXPENSE_NON_FINANCE_HIGH_VALUE_COMMIT_CLAIM_POLICY, PolicyEngine, PolicyOutcome, PrincipalIn,
+    ResourceIn, compile_analysis_plan, execute_analysis_with_solver,
 };
 use cedar_policy_symcc::solver::{Decision, DecisionWithModel, Solver, SolverError};
+use converge_core::{AuthorityLevel, FlowAction, FlowPhase};
+use converge_pack::{DomainId, GateId, PolicyVersionId, ResourceKind};
 use proptest::prelude::*;
 use tokio::io::{AsyncWrite, Sink};
 
@@ -19,6 +22,60 @@ const SIMPLE_SCHEMA: &str = r"
     };
 ";
 const PERMIT_ALL_POLICY: &str = r#"permit(principal, action == Action::"View", resource);"#;
+const BROKEN_EXPENSE_POLICY_ALLOWS_CLAIM_SPACE: &str = r#"
+permit(principal, action == Action::"commit", resource)
+when {
+  resource.resource_type == "expense" &&
+  principal.domains.contains("finance") == false &&
+  principal.authority == "supervisory" &&
+  context.amount > 5000 &&
+  context.human_approval_present == true &&
+  resource.gates_passed.contains("receipt") &&
+  resource.gates_passed.contains("manager_approval") &&
+  context.required_gates_met == true
+};
+"#;
+
+#[derive(Debug, Clone)]
+struct ExpenseClaimReviewCase {
+    name: &'static str,
+    authority: AuthorityLevel,
+    domains: &'static [&'static str],
+    resource_type: &'static str,
+    action: FlowAction,
+    amount: i64,
+    human_approval_present: bool,
+    gates_passed: &'static [&'static str],
+    required_gates_met: bool,
+    expected_claim_match: bool,
+}
+
+impl ExpenseClaimReviewCase {
+    fn request(&self) -> DecideRequest {
+        DecideRequest {
+            principal: PrincipalIn {
+                id: format!("agent:{}", self.name.replace('_', "-")).into(),
+                authority: self.authority,
+                domains: self.domains.iter().copied().map(DomainId::new).collect(),
+                policy_version: Some(PolicyVersionId::new("expense_v1")),
+            },
+            resource: ResourceIn {
+                id: format!("expense:{}", self.name.replace('_', "-")).into(),
+                resource_type: Some(ResourceKind::new(self.resource_type)),
+                phase: Some(FlowPhase::Commitment),
+                gates_passed: Some(self.gates_passed.iter().copied().map(GateId::new).collect()),
+            },
+            action: self.action,
+            context: Some(ContextIn {
+                commitment_type: Some("expense".into()),
+                amount: Some(self.amount),
+                human_approval_present: Some(self.human_approval_present),
+                required_gates_met: Some(self.required_gates_met),
+            }),
+            delegation_b64: None,
+        }
+    }
+}
 
 #[derive(Debug)]
 struct FixedDecisionSolver {
@@ -91,6 +148,81 @@ fn permit_all_input() -> CedarAnalysisInput {
     )
 }
 
+fn positive_claim_review_case() -> ExpenseClaimReviewCase {
+    ExpenseClaimReviewCase {
+        name: "baseline_non_finance_high_value_commit",
+        authority: AuthorityLevel::Supervisory,
+        domains: &["operations"],
+        resource_type: "expense",
+        action: FlowAction::Commit,
+        amount: 5_001,
+        human_approval_present: true,
+        gates_passed: &["receipt", "manager_approval"],
+        required_gates_met: true,
+        expected_claim_match: true,
+    }
+}
+
+fn claim_review_cases() -> Vec<ExpenseClaimReviewCase> {
+    vec![
+        positive_claim_review_case(),
+        ExpenseClaimReviewCase {
+            name: "finance_domain_is_outside_claim",
+            domains: &["finance"],
+            expected_claim_match: false,
+            ..positive_claim_review_case()
+        },
+        ExpenseClaimReviewCase {
+            name: "advisory_authority_is_outside_claim",
+            authority: AuthorityLevel::Advisory,
+            expected_claim_match: false,
+            ..positive_claim_review_case()
+        },
+        ExpenseClaimReviewCase {
+            name: "threshold_amount_is_outside_claim",
+            amount: 5_000,
+            expected_claim_match: false,
+            ..positive_claim_review_case()
+        },
+        ExpenseClaimReviewCase {
+            name: "missing_human_approval_is_outside_claim",
+            human_approval_present: false,
+            expected_claim_match: false,
+            ..positive_claim_review_case()
+        },
+        ExpenseClaimReviewCase {
+            name: "missing_receipt_gate_is_outside_claim",
+            gates_passed: &["manager_approval"],
+            expected_claim_match: false,
+            ..positive_claim_review_case()
+        },
+        ExpenseClaimReviewCase {
+            name: "missing_manager_gate_is_outside_claim",
+            gates_passed: &["receipt"],
+            expected_claim_match: false,
+            ..positive_claim_review_case()
+        },
+        ExpenseClaimReviewCase {
+            name: "required_gates_false_is_outside_claim",
+            required_gates_met: false,
+            expected_claim_match: false,
+            ..positive_claim_review_case()
+        },
+        ExpenseClaimReviewCase {
+            name: "non_expense_resource_is_outside_claim",
+            resource_type: "invoice",
+            expected_claim_match: false,
+            ..positive_claim_review_case()
+        },
+        ExpenseClaimReviewCase {
+            name: "validate_action_is_outside_claim",
+            action: FlowAction::Validate,
+            expected_claim_match: false,
+            ..positive_claim_review_case()
+        },
+    ]
+}
+
 #[test]
 fn compiles_expense_policy_for_symbolic_analysis() {
     let plan = compile_analysis_plan(&expense_input(INVARIANT_ID))
@@ -137,6 +269,65 @@ fn compiles_conditional_expense_claim_for_symbolic_analysis() {
         plan.request_environments
             .iter()
             .any(|env| env.action == "Action::\"commit\"")
+    );
+}
+
+#[test]
+fn conditional_expense_claim_policy_matches_business_review_fixtures() {
+    assert_eq!(
+        CedarAnalysisQuery::ExpenseNonFinanceHighValueCommitDenied.claim_policy_source(),
+        Some(EXPENSE_NON_FINANCE_HIGH_VALUE_COMMIT_CLAIM_POLICY)
+    );
+    let claim_engine = PolicyEngine::from_policy_str(
+        CedarAnalysisQuery::ExpenseNonFinanceHighValueCommitDenied
+            .claim_policy_source()
+            .expect("conditional query should expose its Cedar claim policy"),
+    )
+    .expect("claim policy should parse");
+
+    for case in claim_review_cases() {
+        let decision = claim_engine
+            .evaluate(&case.request())
+            .unwrap_or_else(|err| panic!("{} should evaluate: {err}", case.name));
+
+        assert_eq!(
+            decision.outcome.is_allowed(),
+            case.expected_claim_match,
+            "{} mapped to unexpected claim-policy membership: {decision:#?}",
+            case.name
+        );
+    }
+}
+
+#[test]
+fn production_policy_rejects_positive_claim_review_fixture() {
+    let engine = PolicyEngine::from_policy_str(EXPENSE_APPROVAL_POLICY)
+        .expect("production expense policy should parse");
+    let decision = engine
+        .evaluate(&positive_claim_review_case().request())
+        .expect("positive claim fixture should evaluate");
+
+    assert_eq!(decision.outcome, PolicyOutcome::Reject);
+}
+
+#[test]
+fn negative_mutant_policy_allows_positive_claim_review_fixture() {
+    let engine = PolicyEngine::from_policy_str(BROKEN_EXPENSE_POLICY_ALLOWS_CLAIM_SPACE)
+        .expect("mutant policy should parse");
+    let decision = engine
+        .evaluate(&positive_claim_review_case().request())
+        .expect("positive claim fixture should evaluate against mutant policy");
+
+    assert_eq!(decision.outcome, PolicyOutcome::Promote);
+    assert!(
+        compile_analysis_plan(&CedarAnalysisInput::new(
+            "expense.non_finance_commit.high_value.mutant",
+            CedarAnalysisQuery::ExpenseNonFinanceHighValueCommitDenied,
+            BROKEN_EXPENSE_POLICY_ALLOWS_CLAIM_SPACE,
+            EXPENSE_APPROVAL_SCHEMA,
+        ))
+        .is_ok(),
+        "the conditional query must still compile against a policy that violates the claim"
     );
 }
 
@@ -206,6 +397,18 @@ async fn solver_execution_reports_no_violation_when_solver_returns_unsat() {
             .expect("solver-backed execution should produce a report");
 
     assert_eq!(report.status, CedarAnalysisExecutionStatus::NoViolation);
+    assert_eq!(
+        report.execution_identity.backend,
+        "caller-supplied-symcc-solver"
+    );
+    assert_eq!(report.execution_identity.backend_version, "not_applicable");
+    assert!(report.execution_identity.native_identity.is_none());
+    assert!(
+        report
+            .execution_identity
+            .runtime_config
+            .contains("query=always_denies")
+    );
     assert_eq!(report.checks.len(), report.plan.request_env_count());
     assert!(
         report
@@ -228,6 +431,12 @@ async fn conditional_expense_claim_reports_no_violation_when_solver_returns_unsa
     assert_eq!(
         report.plan.query,
         CedarAnalysisQuery::ExpenseNonFinanceHighValueCommitDenied
+    );
+    assert!(
+        report
+            .execution_identity
+            .runtime_config
+            .contains("query=expense_non_finance_high_value_commit_denied")
     );
     assert!(
         report

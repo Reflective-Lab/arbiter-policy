@@ -66,12 +66,12 @@ pub const ARBITER_FORMATION_CAPABILITIES: &[ArbiterFormationCapability] = &[
         id: ANALYSIS_EVIDENCE_CAPABILITY_ID,
         pack_id: ARBITER_FORMATION_PACK_ID,
         kind: ArbiterFormationCapabilityKind::AnalysisEvidence,
-        suggestor: None,
+        suggestor: Some("cedar-analysis"),
         feature: Some("analysis"),
         input: "arbiter::CedarAnalysisInput",
         output: "arbiter::CedarAnalysisReport",
         evidence_tier: "searched",
-        description: "Offline Cedar SymCC analysis evidence for CI or nightly checks; not a runtime gate.",
+        description: "Cedar SymCC analysis suggestor for searched policy-invariant evidence; not a runtime authorization gate.",
     },
 ];
 
@@ -102,6 +102,20 @@ mod tests {
         assert_eq!(capability.kind, ArbiterFormationCapabilityKind::RuntimeGate);
         assert_eq!(capability.suggestor, Some("cedar-hitl-gate"));
         assert_eq!(capability.evidence_tier, "decided");
+    }
+
+    #[test]
+    fn exposes_cedar_analysis_suggestor_for_formations() {
+        let capability = find_formation_capability(ANALYSIS_EVIDENCE_CAPABILITY_ID)
+            .expect("analysis capability should be registered");
+
+        assert_eq!(capability.pack_id, ARBITER_FORMATION_PACK_ID);
+        assert_eq!(
+            capability.kind,
+            ArbiterFormationCapabilityKind::AnalysisEvidence
+        );
+        assert_eq!(capability.suggestor, Some("cedar-analysis"));
+        assert_eq!(capability.evidence_tier, "searched");
     }
 
     #[test]

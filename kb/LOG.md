@@ -7,6 +7,12 @@ Append an entry on every kb/ change. Format mirrors converge.
 
 | Date | File | Change | Author |
 |------|------|--------|--------|
+| 2026-05-15 | Architecture/Cedar Analytics and Formal Evidence.md, Architecture/Surface.md, README.md | Recorded `CedarAnalysisReport` v2 with shared Converge `ExecutionIdentity` for Arbiter SymCC/CVC5 searched evidence | mixed |
+| 2026-05-15 | Architecture/Cedar Analytics and Formal Evidence.md, Architecture/Surface.md, README.md | Recorded Arbiter's typed Converge payload boundary for analysis facts and policy-gate constraint payloads | mixed |
+| 2026-05-14 | Architecture/Cedar Analytics and Formal Evidence.md | Recorded that the high-risk claim portfolio is product-side in Atelier and Arena, while Arbiter keeps the reusable Cedar analysis machinery | mixed |
+| 2026-05-14 | Architecture/Cedar Analytics and Formal Evidence.md, Planning/MILESTONES.md, README.md | Clarified that Arbiter's local real-CVC5 smoke exists but is not yet a routinely exercised CI gate; Soter and the integration harness exercise CVC5 today | mixed |
+| 2026-05-14 | Architecture/Cedar Analytics and Formal Evidence.md, Architecture/Surface.md, invariants/expense_non_finance_commit_review.md, README.md | Added model-adequacy review fixtures and negative mutant-policy coverage for the first conditional Arbiter invariant | mixed |
+| 2026-05-14 | Architecture/Cedar Analytics and Formal Evidence.md, Architecture/Surface.md, README.md | Recorded `CedarAnalysisSuggestor`, `CedarAnalysisBackend`, and the product-side Soter CVC5 bridge for real Cedar/SymCC searched evidence | mixed |
 | 2026-05-13 | Architecture/Cedar Analytics and Formal Evidence.md, Planning/MILESTONES.md, README.md, .github/workflows/ci.yml | Recorded explicit CVC5 policy: fake-solver SymCC tests are required, real CVC5 is scheduled/manual smoke until conditional invariant queries exist | mixed |
 | 2026-05-13 | Planning/MILESTONES.md | Marked Cedar Analysis Lane CI wiring complete; added the Analysis (SymCC) job to ci.yml running `cargo test --workspace --all-targets --all-features` | mixed |
 | 2026-05-13 | Architecture/Surface.md | Recorded `ProvenanceSource` as Arbiter's typed proposal-boundary provenance vocabulary | mixed |

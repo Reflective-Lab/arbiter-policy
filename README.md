@@ -40,6 +40,11 @@ Converge kernel into a policy engine.
   and compliance gate suggestors.
 - Formation-facing capability descriptors for Cedar runtime gates and offline
   analysis evidence.
+- `CedarAnalysisSuggestor`, a real Converge suggestor that consumes
+  `CedarAnalysisInput` and emits `CedarAnalysisReport` proposals as searched
+  evidence. Reports carry Converge `ExecutionIdentity` so replay can see
+  whether the result came from a caller-supplied SymCC solver lane or an
+  external CVC5 process.
 - Structured `arbiter.suggestor.execute` tracing spans at suggestor execution
   boundaries.
 - `ProvenanceSource`, a typed extension provenance vocabulary used at Arbiter's
@@ -71,11 +76,19 @@ The first Arbiter assurance lane is:
 
 ```text
 Gherkin invariant
+  -> review fixture matrix for model adequacy
   -> Cedar policy/schema validation
   -> Cedar runtime test
   -> Cedar Analysis preparation
   -> solver-backed counterexample or no-violation artifact
 ```
+
+The main risk is model adequacy: the encoded Cedar claim must match the
+business claim. Arbiter keeps a review fixture for the first conditional
+invariant in
+`crates/arbiter/invariants/expense_non_finance_commit_review.md`, and tests the
+positive and boundary cases before any solver result is treated as useful
+evidence.
 
 Arbiter now runs on the Cedar 4.10 line, matching the Cedar line used by the
 current `cedar-policy-symcc` releases. The optional `analysis` feature adds
@@ -83,6 +96,17 @@ SymCC-backed preparation and execution: parse a Cedar schema, validate a policy
 set, compile every schema request environment, emit stable preparation
 evidence, and then run a caller-supplied solver to produce no-violation,
 unknown, error, or counterexample results.
+
+`CedarAnalysisSuggestor` is the Converge-facing surface for this lane. It reads
+typed `CedarAnalysisInput` payload facts, delegates execution to a
+`CedarAnalysisBackend`, and writes typed `CedarAnalysisReport` payload facts to
+`ContextKey::Evaluations`. `CedarAnalysisReport` is payload v2 and includes
+the shared Converge `ExecutionIdentity` contract: producer crate/version,
+logical backend, runtime config, and native process identity when the local
+CVC5 path is used.
+Arbiter ships `LocalCvc5AnalysisBackend` for the local `cvc5` process path.
+Product-side assemblies can provide other backends without making Arbiter
+depend on another extension.
 
 `execute_analysis_with_cvc5` uses the `CVC5` environment variable first and
 then `cvc5` on `PATH`. Tests use an in-process fake solver so CI does not need
@@ -95,6 +119,15 @@ a local `cvc5` binary and return a Cedar Analysis report. It is `Searched`
 evidence. It is not a proof layer. Invariant-assurance runs must use a
 conditional query that encodes the actual Arbiter claim being checked, not only
 the broad `AlwaysDenies` or `AlwaysAllows` query shapes.
+
+Current operational status:
+
+- Soter's native CVC5 FFI is built and tested in `soter-smt`.
+- The workspace integration harness exercises
+  `Arbiter -> Cedar/SymCC -> Soter CVC5 FFI` with the `soter-cvc5` feature.
+- Arbiter's own local-`cvc5` smoke tests are implemented but ignored by
+  default. They require `CVC5` or `cvc5` on `PATH` and are not yet a routinely
+  exercised Arbiter CI gate.
 
 The CI policy is:
 
@@ -139,7 +172,7 @@ The stable capability family is `arbiter.cedar`.
 |---|---|---|
 | `arbiter.cedar.policy_gate` | `PolicyGateSuggestor` / `policy-gate` | `decided` |
 | `arbiter.cedar.hitl_gate` | `CedarHitlGateSuggestor` / `cedar-hitl-gate` | `decided` |
-| `arbiter.cedar.analysis_evidence` | `CedarAnalysisReport` under `analysis` | `searched` |
+| `arbiter.cedar.analysis_evidence` | `CedarAnalysisSuggestor` / `cedar-analysis` under `analysis` | `searched` |
 
 `CedarHitlGateSuggestor` is the explicit strict-HITL registration point. It
 uses the same Cedar flow authorization path as `FlowGateSuggestor`, but exposes

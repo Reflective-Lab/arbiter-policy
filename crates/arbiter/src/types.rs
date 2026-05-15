@@ -8,13 +8,16 @@
 use serde::{Deserialize, Serialize};
 
 use converge_core::{AuthorityLevel, FlowAction, FlowPhase};
-use converge_pack::{DomainId, GateId, PolicyVersionId, PrincipalId, ResourceId, ResourceKind};
+use converge_pack::{
+    DomainId, FactPayload, GateId, PolicyVersionId, PrincipalId, ResourceId, ResourceKind,
+};
 
 /// Suggestor persona — the principal in Converge policy decisions.
 ///
 /// Maps to converge-personas definitions. Authority levels determine
 /// what actions the agent can perform without escalation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PrincipalIn {
     /// Suggestor identifier (e.g., `agent:strategic_analyst`)
     pub id: PrincipalId,
@@ -30,7 +33,8 @@ pub struct PrincipalIn {
 ///
 /// Represents a converging flow at a specific phase, with its
 /// gate evaluation history.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ResourceIn {
     /// Flow/commitment identifier (e.g., `flow:quote-2025-0042`)
     pub id: ResourceId,
@@ -47,7 +51,8 @@ pub struct ResourceIn {
 ///
 /// The caller pre-joins these facts from the business context,
 /// keeping the policy engine free of data-fetching side effects.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ContextIn {
     /// Type of commitment (quote, spend, contract, invoice)
     pub commitment_type: Option<String>,
@@ -60,7 +65,8 @@ pub struct ContextIn {
 }
 
 /// Full decision request
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DecideRequest {
     pub principal: PrincipalIn,
     pub resource: ResourceIn,
@@ -69,4 +75,9 @@ pub struct DecideRequest {
     pub context: Option<ContextIn>,
     /// Optional delegation token for fast-path elevated authority
     pub delegation_b64: Option<String>,
+}
+
+impl FactPayload for DecideRequest {
+    const FAMILY: &'static str = "arbiter.decide_request";
+    const VERSION: u16 = 1;
 }

@@ -35,9 +35,11 @@ pub mod types;
 
 #[cfg(feature = "analysis")]
 pub use analysis::{
-    CedarAnalysisCheck, CedarAnalysisError, CedarAnalysisExecutionStatus, CedarAnalysisInput,
-    CedarAnalysisPlan, CedarAnalysisQuery, CedarAnalysisReport, CedarRequestEnvironmentAnalysis,
-    compile_analysis_plan, execute_analysis_with_cvc5, execute_analysis_with_solver,
+    CedarAnalysisBackend, CedarAnalysisCheck, CedarAnalysisError, CedarAnalysisExecutionStatus,
+    CedarAnalysisInput, CedarAnalysisPlan, CedarAnalysisQuery, CedarAnalysisReport,
+    CedarRequestEnvironmentAnalysis, EXPENSE_NON_FINANCE_HIGH_VALUE_COMMIT_CLAIM_POLICY,
+    LocalCvc5AnalysisBackend, compile_analysis_plan, execute_analysis_with_cvc5,
+    execute_analysis_with_solver, execute_analysis_with_solver_and_identity,
 };
 pub use engine::PolicyEngine;
 pub use formation::{
@@ -46,10 +48,16 @@ pub use formation::{
     POLICY_GATE_CAPABILITY_ID, find_formation_capability, formation_capabilities,
 };
 pub use provenance::{ProvenanceSource, UnknownProvenanceSource};
+#[cfg(feature = "analysis")]
+pub use suggestor::CedarAnalysisSuggestor;
 pub use suggestor::{
-    ApprovalGateSuggestor, BudgetGateSuggestor, CedarHitlGateSuggestor, ComplianceCondition,
-    ComplianceGateSuggestor, ComplianceRule, DataClassificationGateSuggestor,
-    DelegationVerifySuggestor, FlowGateSuggestor, PolicyGateSuggestor, RateLimitGateSuggestor,
+    ApprovalConstraintPayload, ApprovalGateStatus, ApprovalGateSuggestor, ApprovalRiskPayload,
+    BudgetConstraintPayload, BudgetGateSuggestor, CedarHitlGateSuggestor, ComplianceCondition,
+    ComplianceConstraintPayload, ComplianceDocumentPayload, ComplianceGateSuggestor,
+    ComplianceRule, CostEstimatePayload, DataClassificationConstraintPayload,
+    DataClassificationGateSuggestor, DelegationVerificationPayload, DelegationVerifySuggestor,
+    FlowGateSuggestor, GateConstraintAction, PolicyGateSuggestor, RateLimitConstraintPayload,
+    RateLimitGateSuggestor,
 };
 pub use types::{ContextIn, DecideRequest, PrincipalIn, ResourceIn};
 

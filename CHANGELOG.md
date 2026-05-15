@@ -4,6 +4,29 @@ All notable changes to arbiter will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-05-15
+
+### Added
+
+- Added typed `FactPayload` support for Cedar Analysis input, plan, and report
+  payloads so Arbiter analysis no longer depends on string-content proposal
+  payloads in process.
+- Added `CedarAnalysisBackend` and `LocalCvc5AnalysisBackend` for optional
+  solver-backed Cedar Analysis execution without making CVC5 a required CI
+  dependency.
+- Added model-adequacy review material for the expense/non-finance high-value
+  commit invariant.
+
+### Changed
+
+- **BREAKING:** `CedarAnalysisReport` now uses payload family version `2` and
+  carries a required `ExecutionIdentity` describing the SymCC/CVC5 execution
+  backend.
+- Cedar Analysis proposal construction now emits typed plan/report payloads and
+  preserves solver execution identity as promotion evidence.
+- Cedar Analysis structs now use strict `serde` field validation at the typed
+  payload boundary.
+
 ## [1.1.1] - 2026-05-14
 
 ### Added

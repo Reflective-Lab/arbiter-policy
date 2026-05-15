@@ -16,13 +16,25 @@ source: mixed
 - `CedarHitlGateSuggestor` — explicit strict Cedar-backed HITL suggestor for
   Formations.
 - `DelegationVerifySuggestor` — Ed25519 delegation verification suggestor.
-- `CedarAnalysisInput`, `CedarAnalysisPlan`, and `CedarAnalysisReport` under
-  the `analysis` feature — offline Cedar Analysis evidence.
+- `CedarAnalysisSuggestor` under the `analysis` feature — Converge suggestor
+  for searched Cedar Analysis evidence.
+- `CedarAnalysisBackend` under the `analysis` feature — backend trait for
+  caller-supplied SymCC solver execution.
+- `LocalCvc5AnalysisBackend` under the `analysis` feature — local `cvc5`
+  process backend for manual/scheduled solver checks.
+- `EXPENSE_NON_FINANCE_HIGH_VALUE_COMMIT_CLAIM_POLICY` under the `analysis`
+  feature — reviewable Cedar policy that encodes the first conditional claim
+  space.
+- `CedarAnalysisInput`, `CedarAnalysisPlan`, and `CedarAnalysisReport` v2 under
+  the `analysis` feature — typed offline Cedar Analysis evidence payloads.
+  Reports include shared Converge `ExecutionIdentity` metadata.
+- `CostEstimatePayload`, `ApprovalRiskPayload`, `ComplianceDocumentPayload`,
+  and the gate constraint payloads — typed in-loop policy-gate payloads used
+  instead of semantic JSON strings.
 - `formation_capabilities()` — Formation-facing capability catalog for
   `arbiter.cedar`.
 - `ProvenanceSource` — typed extension provenance vocabulary used before
-  converting to `converge-pack::ProposedFact`'s current string provenance
-  field.
+  converting to `converge-pack::Provenance` at proposal construction.
 
 ## Observability
 
@@ -41,6 +53,10 @@ execution boundary. The `provenance` field is derived from
 - `arbiter.cedar.policy_gate`
 - `arbiter.cedar.hitl_gate`
 - `arbiter.cedar.analysis_evidence`
+
+`arbiter.cedar.analysis_evidence` maps to `CedarAnalysisSuggestor` with
+suggestor name `cedar-analysis`. It emits `Searched` evidence and does not
+promote facts directly.
 
 ## Contract dependencies
 

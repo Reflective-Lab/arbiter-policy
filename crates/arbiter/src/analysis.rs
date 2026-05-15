@@ -1,11 +1,11 @@
 //! Optional Cedar symbolic-analysis support.
 //!
 //! This module uses `cedar-policy-symcc` to compile a policy set against a
-//! Cedar schema and produce deterministic analysis evidence. It deliberately
-//! stops before solver execution so the default Arbiter path does not require a
-//! local SMT solver such as CVC5.
+//! Cedar schema and produce deterministic analysis evidence. Solver execution
+//! is optional: tests can use an in-process SymCC solver, while scheduled or
+//! manual checks can use a local CVC5 process.
 
-use std::str::FromStr;
+use std::{env, process::Command, str::FromStr};
 
 use cedar_policy::{PolicySet, RequestEnv, Schema, ValidationMode, Validator};
 use cedar_policy_symcc::{
@@ -14,13 +14,21 @@ use cedar_policy_symcc::{
     err::Error as SymccError,
     solver::{LocalSolver, Solver},
 };
+use converge_pack::{
+    ExecutionIdentity, ExecutionProducerIdentity, FactPayload, NativeExecutionIdentity,
+};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 const CEDAR_SYMCC_VERSION: &str = "0.4";
 const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
-const EXPENSE_NON_FINANCE_HIGH_VALUE_COMMIT_CLAIM_POLICY: &str = r#"
+/// Cedar policy that defines the request space for
+/// [`CedarAnalysisQuery::ExpenseNonFinanceHighValueCommitDenied`].
+///
+/// This is the model-adequacy boundary: reviewers should compare this Cedar
+/// claim policy to the human business invariant before trusting solver output.
+pub const EXPENSE_NON_FINANCE_HIGH_VALUE_COMMIT_CLAIM_POLICY: &str = r#"
 permit(principal, action == Action::"commit", resource)
 when {
   resource.resource_type == "expense" &&
@@ -54,7 +62,8 @@ pub enum CedarAnalysisQuery {
 }
 
 /// Input for a Cedar symbolic-analysis preparation run.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CedarAnalysisInput {
     /// Stable invariant identifier, usually derived from a Gherkin scenario.
     pub invariant_id: String,
@@ -64,6 +73,56 @@ pub struct CedarAnalysisInput {
     pub policy_source: String,
     /// Cedar schema source.
     pub schema_source: String,
+}
+
+impl FactPayload for CedarAnalysisInput {
+    const FAMILY: &'static str = "arbiter.cedar_analysis.input";
+    const VERSION: u16 = 1;
+}
+
+/// Backend that can execute a Cedar Analysis request.
+///
+/// This trait is intentionally in Arbiter so products can assemble different
+/// solver backends without making Arbiter depend on another extension crate.
+#[async_trait::async_trait]
+pub trait CedarAnalysisBackend: Send + Sync {
+    /// Stable backend name for diagnostics and provenance.
+    fn name(&self) -> &'static str;
+
+    /// Execute the analysis request.
+    async fn analyze(
+        &self,
+        input: &CedarAnalysisInput,
+    ) -> Result<CedarAnalysisReport, CedarAnalysisError>;
+}
+
+/// Cedar Analysis backend that uses the local `cvc5` binary through
+/// `cedar-policy-symcc`.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LocalCvc5AnalysisBackend;
+
+#[async_trait::async_trait]
+impl CedarAnalysisBackend for LocalCvc5AnalysisBackend {
+    fn name(&self) -> &'static str {
+        "cedar-analysis-local-cvc5"
+    }
+
+    async fn analyze(
+        &self,
+        input: &CedarAnalysisInput,
+    ) -> Result<CedarAnalysisReport, CedarAnalysisError> {
+        let input = input.clone();
+        tokio::task::spawn_blocking(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|err| CedarAnalysisError::SolverInit(err.to_string()))?;
+
+            runtime.block_on(async { execute_analysis_with_cvc5(&input).await })
+        })
+        .await
+        .map_err(|err| CedarAnalysisError::SolverInit(err.to_string()))?
+    }
 }
 
 impl CedarAnalysisInput {
@@ -85,6 +144,7 @@ impl CedarAnalysisInput {
 
 /// Per-request-environment analysis produced by SymCC compilation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CedarRequestEnvironmentAnalysis {
     /// Principal entity type from the request environment.
     pub principal_type: String,
@@ -110,6 +170,7 @@ impl CedarRequestEnvironmentAnalysis {
 /// Deterministic, auditable evidence that a policy/schema/query combination
 /// can be handed to Cedar's symbolic compiler.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CedarAnalysisPlan {
     /// Stable invariant identifier.
     pub invariant_id: String,
@@ -129,6 +190,11 @@ pub struct CedarAnalysisPlan {
     pub policy_count: usize,
     /// Request environments successfully compiled by SymCC.
     pub request_environments: Vec<CedarRequestEnvironmentAnalysis>,
+}
+
+impl FactPayload for CedarAnalysisPlan {
+    const FAMILY: &'static str = "arbiter.cedar_analysis.plan";
+    const VERSION: u16 = 1;
 }
 
 impl CedarAnalysisPlan {
@@ -156,6 +222,7 @@ pub enum CedarAnalysisExecutionStatus {
 
 /// Per-request-environment solver result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CedarAnalysisCheck {
     /// Request environment analyzed by the solver.
     pub environment: CedarRequestEnvironmentAnalysis,
@@ -169,13 +236,21 @@ pub struct CedarAnalysisCheck {
 
 /// Solver-backed Cedar Analysis report.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CedarAnalysisReport {
     /// Solver-free preparation evidence for the same policy/schema/query.
     pub plan: CedarAnalysisPlan,
+    /// Runtime identity for the backend that executed the symbolic query.
+    pub execution_identity: ExecutionIdentity,
     /// Rollup status across all request environments.
     pub status: CedarAnalysisExecutionStatus,
     /// Per-request-environment solver results.
     pub checks: Vec<CedarAnalysisCheck>,
+}
+
+impl FactPayload for CedarAnalysisReport {
+    const FAMILY: &'static str = "arbiter.cedar_analysis.report";
+    const VERSION: u16 = 2;
 }
 
 /// Errors from preparing Cedar symbolic-analysis evidence.
@@ -281,6 +356,24 @@ pub async fn execute_analysis_with_solver<S: Solver>(
     input: &CedarAnalysisInput,
     solver: S,
 ) -> Result<CedarAnalysisReport, CedarAnalysisError> {
+    execute_analysis_with_solver_and_identity(
+        input,
+        solver,
+        non_native_analysis_identity(input, "caller-supplied-symcc-solver"),
+    )
+    .await
+}
+
+/// Execute a Cedar Analysis query with a caller-supplied SymCC solver and
+/// explicit execution identity.
+///
+/// Use this when the caller can name the real backend more precisely than
+/// Arbiter's generic in-process solver wrapper.
+pub async fn execute_analysis_with_solver_and_identity<S: Solver>(
+    input: &CedarAnalysisInput,
+    solver: S,
+    execution_identity: ExecutionIdentity,
+) -> Result<CedarAnalysisReport, CedarAnalysisError> {
     let plan = compile_analysis_plan(input)?;
     let schema = parse_schema(&input.schema_source)?;
     let policies = parse_policy_set(&input.policy_source)?;
@@ -354,6 +447,7 @@ pub async fn execute_analysis_with_solver<S: Solver>(
 
     Ok(CedarAnalysisReport {
         status: overall_status(&checks),
+        execution_identity,
         plan,
         checks,
     })
@@ -368,7 +462,64 @@ pub async fn execute_analysis_with_cvc5(
 ) -> Result<CedarAnalysisReport, CedarAnalysisError> {
     let solver =
         LocalSolver::cvc5().map_err(|err| CedarAnalysisError::SolverInit(err.to_string()))?;
-    execute_analysis_with_solver(input, solver).await
+    execute_analysis_with_solver_and_identity(input, solver, cvc5_analysis_identity(input)).await
+}
+
+fn non_native_analysis_identity(input: &CedarAnalysisInput, backend: &str) -> ExecutionIdentity {
+    ExecutionIdentity::non_native(
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION"),
+        backend,
+        analysis_runtime_config(input),
+    )
+}
+
+fn cvc5_analysis_identity(input: &CedarAnalysisInput) -> ExecutionIdentity {
+    let version = local_cvc5_version();
+    ExecutionIdentity::new(
+        ExecutionProducerIdentity::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION")),
+        "cvc5",
+        version.clone(),
+        "external_process=true",
+        analysis_runtime_config(input),
+        Some(NativeExecutionIdentity::new(
+            "CVC5",
+            version.clone(),
+            "https://github.com/cvc5/cvc5",
+            "external",
+            version,
+            "external-process",
+        )),
+    )
+}
+
+fn analysis_runtime_config(input: &CedarAnalysisInput) -> String {
+    format!(
+        "invariant_id={}; query={}; policy_hash={}; schema_hash={}; query_hash={}",
+        input.invariant_id,
+        input.query.stable_label(),
+        stable_hash(&input.policy_source),
+        stable_hash(&input.schema_source),
+        stable_query_hash(&input.invariant_id, input.query)
+    )
+}
+
+fn local_cvc5_version() -> String {
+    let executable = env::var("CVC5").unwrap_or_else(|_| "cvc5".to_string());
+    Command::new(executable)
+        .arg("--version")
+        .output()
+        .ok()
+        .and_then(|output| {
+            if output.status.success() {
+                String::from_utf8(output.stdout).ok()
+            } else {
+                None
+            }
+        })
+        .and_then(|stdout| stdout.lines().next().map(str::trim).map(str::to_string))
+        .filter(|version| !version.is_empty())
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 fn overall_status(checks: &[CedarAnalysisCheck]) -> CedarAnalysisExecutionStatus {
@@ -444,6 +595,13 @@ fn stable_query_hash(invariant_id: &str, query: CedarAnalysisQuery) -> String {
 }
 
 impl CedarAnalysisQuery {
+    /// Cedar policy source that encodes the claim space for this query, when
+    /// the query is conditional.
+    #[must_use]
+    pub const fn claim_policy_source(self) -> Option<&'static str> {
+        self.policy_source()
+    }
+
     const fn stable_label(self) -> &'static str {
         match self {
             Self::AlwaysAllows => "always_allows",

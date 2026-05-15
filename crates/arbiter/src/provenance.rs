@@ -1,12 +1,12 @@
 //! Typed provenance source vocabulary for extension-originated facts.
 //!
-//! `converge-pack::ProposedFact` currently stores provenance as a string. This
-//! module keeps Arbiter's boundary typed and converts to that string only at
-//! the final proposal-construction point.
+//! `converge-pack::ProposedFact` stores provenance as a concrete metadata
+//! value. This module keeps Arbiter's source vocabulary typed and converts only
+//! at the final proposal-construction point.
 
 use std::{error::Error, fmt, str::FromStr};
 
-use converge_pack::{ContextKey, ProposalId, fact::ProposedFact};
+use converge_pack::{ContextKey, FactPayload, ProposalId, fact::ProposedFact};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -50,9 +50,9 @@ impl ProvenanceSource {
         self,
         key: ContextKey,
         id: impl Into<ProposalId>,
-        content: impl Into<String>,
+        payload: impl FactPayload + PartialEq,
     ) -> ProposedFact {
-        ProposedFact::new(key, id, content, self.as_str())
+        ProposedFact::new(key, id, payload, self.as_str())
     }
 }
 
@@ -108,9 +108,9 @@ mod tests {
         let fact = ProvenanceSource::Arbiter.proposed_fact(
             ContextKey::Diagnostic,
             "diagnostic",
-            "content",
+            converge_pack::TextPayload::new("content"),
         );
 
-        assert_eq!(fact.provenance, "arbiter");
+        assert_eq!(fact.provenance(), "arbiter");
     }
 }

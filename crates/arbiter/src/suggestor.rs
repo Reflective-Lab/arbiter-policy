@@ -1,10 +1,18 @@
 use std::sync::Arc;
 
 use converge_core::FlowGateInput;
-use converge_pack::{AgentEffect, Context, ContextKey, ProposalId, Suggestor, fact::ProposedFact};
+use converge_pack::{
+    AgentEffect, Context, ContextKey, DiagnosticPayload, FactId, FactPayload, ProposalId,
+    Suggestor, fact::ProposedFact,
+};
 use ed25519_dalek::VerifyingKey;
+use serde::{Deserialize, Serialize};
 use tracing::info_span;
 
+#[cfg(feature = "analysis")]
+use crate::analysis::{
+    CedarAnalysisBackend, CedarAnalysisExecutionStatus, CedarAnalysisInput, CedarAnalysisReport,
+};
 use crate::delegation;
 use crate::engine::PolicyEngine;
 use crate::provenance::ProvenanceSource;
@@ -20,13 +28,141 @@ const BUDGET_GATE_NAME: &str = "budget-gate";
 const APPROVAL_GATE_NAME: &str = "approval-gate";
 const DATA_CLASSIFICATION_GATE_NAME: &str = "data-classification-gate";
 const COMPLIANCE_GATE_NAME: &str = "compliance-gate";
+#[cfg(feature = "analysis")]
+const CEDAR_ANALYSIS_NAME: &str = "cedar-analysis";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GateConstraintAction {
+    Block,
+    Pause,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalGateStatus {
+    PendingHumanReview,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CostEstimatePayload {
+    pub cost: f64,
+}
+
+impl FactPayload for CostEstimatePayload {
+    const FAMILY: &'static str = "arbiter.cost_estimate";
+    const VERSION: u16 = 1;
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ApprovalRiskPayload {
+    pub confidence: f64,
+}
+
+impl FactPayload for ApprovalRiskPayload {
+    const FAMILY: &'static str = "arbiter.approval_risk";
+    const VERSION: u16 = 1;
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ComplianceDocumentPayload {
+    pub fields: serde_json::Map<String, serde_json::Value>,
+}
+
+impl FactPayload for ComplianceDocumentPayload {
+    const FAMILY: &'static str = "arbiter.compliance_document";
+    const VERSION: u16 = 1;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DelegationVerificationPayload {
+    pub valid: bool,
+    pub reason: Option<String>,
+}
+
+impl FactPayload for DelegationVerificationPayload {
+    const FAMILY: &'static str = "arbiter.delegation_verification";
+    const VERSION: u16 = 1;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RateLimitConstraintPayload {
+    pub key: ContextKey,
+    pub count: usize,
+    pub limit: usize,
+    pub action: GateConstraintAction,
+}
+
+impl FactPayload for RateLimitConstraintPayload {
+    const FAMILY: &'static str = "arbiter.constraint.rate_limit";
+    const VERSION: u16 = 1;
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BudgetConstraintPayload {
+    pub total_cost: f64,
+    pub limit: f64,
+    pub action: GateConstraintAction,
+}
+
+impl FactPayload for BudgetConstraintPayload {
+    const FAMILY: &'static str = "arbiter.constraint.budget";
+    const VERSION: u16 = 1;
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ApprovalConstraintPayload {
+    pub status: ApprovalGateStatus,
+    pub threshold: f64,
+    pub action: GateConstraintAction,
+}
+
+impl FactPayload for ApprovalConstraintPayload {
+    const FAMILY: &'static str = "arbiter.constraint.approval";
+    const VERSION: u16 = 1;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DataClassificationConstraintPayload {
+    pub fact_id: FactId,
+    pub detected_types: Vec<String>,
+    pub action: GateConstraintAction,
+}
+
+impl FactPayload for DataClassificationConstraintPayload {
+    const FAMILY: &'static str = "arbiter.constraint.data_classification";
+    const VERSION: u16 = 1;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ComplianceConstraintPayload {
+    pub rule_id: String,
+    pub framework: String,
+    pub fact_id: FactId,
+    pub field: String,
+    pub action: GateConstraintAction,
+}
+
+impl FactPayload for ComplianceConstraintPayload {
+    const FAMILY: &'static str = "arbiter.constraint.compliance";
+    const VERSION: u16 = 1;
+}
 
 fn proposed_fact(
     key: ContextKey,
     id: impl Into<ProposalId>,
-    content: impl Into<String>,
+    payload: impl FactPayload + PartialEq,
 ) -> ProposedFact {
-    PROVENANCE_SOURCE.proposed_fact(key, id, content)
+    PROVENANCE_SOURCE.proposed_fact(key, id, payload)
 }
 
 fn suggestor_span(
@@ -60,6 +196,122 @@ fn watched_suggestor_span(
         watched_key = ?watched_key,
         input_count
     )
+}
+
+#[cfg(feature = "analysis")]
+fn diagnostic(id: impl Into<ProposalId>, message: impl Into<String>) -> ProposedFact {
+    proposed_fact(
+        ContextKey::Diagnostic,
+        id,
+        DiagnosticPayload::new("arbiter", message.into()),
+    )
+}
+
+#[cfg(feature = "analysis")]
+fn analysis_confidence(report: &CedarAnalysisReport) -> f64 {
+    match report.status {
+        CedarAnalysisExecutionStatus::NoViolation
+        | CedarAnalysisExecutionStatus::CounterexampleFound => 0.9,
+        CedarAnalysisExecutionStatus::Unknown => 0.2,
+        CedarAnalysisExecutionStatus::Error => 0.0,
+    }
+}
+
+// --- CedarAnalysisSuggestor ---
+
+#[cfg(feature = "analysis")]
+pub struct CedarAnalysisSuggestor<B> {
+    backend: B,
+    input_key: ContextKey,
+    output_key: ContextKey,
+}
+
+#[cfg(feature = "analysis")]
+impl<B> CedarAnalysisSuggestor<B>
+where
+    B: CedarAnalysisBackend,
+{
+    #[must_use]
+    pub fn new(backend: B) -> Self {
+        Self {
+            backend,
+            input_key: ContextKey::Seeds,
+            output_key: ContextKey::Evaluations,
+        }
+    }
+
+    #[must_use]
+    pub fn with_keys(mut self, input_key: ContextKey, output_key: ContextKey) -> Self {
+        self.input_key = input_key;
+        self.output_key = output_key;
+        self
+    }
+}
+
+#[cfg(feature = "analysis")]
+#[async_trait::async_trait]
+impl<B> Suggestor for CedarAnalysisSuggestor<B>
+where
+    B: CedarAnalysisBackend + 'static,
+{
+    fn name(&self) -> &'static str {
+        CEDAR_ANALYSIS_NAME
+    }
+
+    fn dependencies(&self) -> &[ContextKey] {
+        std::slice::from_ref(&self.input_key)
+    }
+
+    fn accepts(&self, ctx: &dyn Context) -> bool {
+        ctx.has(self.input_key) && !ctx.has(self.output_key)
+    }
+
+    async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
+        let span = suggestor_span(
+            CEDAR_ANALYSIS_NAME,
+            self.input_key,
+            self.output_key,
+            ctx.count(self.input_key),
+        );
+
+        let mut proposals = Vec::new();
+        let mut inputs = Vec::new();
+        let _entered = span.enter();
+        for fact in ctx.get(self.input_key) {
+            match fact.require_payload::<CedarAnalysisInput>() {
+                Ok(input) => inputs.push(input.clone()),
+                Err(err) => {
+                    proposals.push(diagnostic(
+                        format!("cedar-analysis-parse-error-{}", fact.id()),
+                        format!("expected CedarAnalysisInput payload: {err}"),
+                    ));
+                }
+            }
+        }
+        drop(_entered);
+
+        for input in inputs {
+            match self.backend.analyze(&input).await {
+                Ok(report) => proposals.push(
+                    proposed_fact(
+                        self.output_key,
+                        format!("cedar-analysis-report-{}", report.plan.invariant_id),
+                        report.clone(),
+                    )
+                    .with_confidence(analysis_confidence(&report)),
+                ),
+                Err(err) => proposals.push(diagnostic(
+                    format!("cedar-analysis-backend-error-{}", input.invariant_id),
+                    format!(
+                        "Cedar Analysis backend {} failed: {err}",
+                        self.backend.name()
+                    ),
+                )),
+            }
+        }
+
+        AgentEffect::with_proposals(proposals)
+    }
 }
 
 // --- PolicyGateSuggestor ---
@@ -121,13 +373,16 @@ impl Suggestor for PolicyGateSuggestor {
             return AgentEffect::empty();
         };
 
-        let req: DecideRequest = match serde_json::from_str(seed.content()) {
-            Ok(r) => r,
+        let req: DecideRequest = match seed.require_payload::<DecideRequest>() {
+            Ok(r) => r.clone(),
             Err(e) => {
                 let diag = proposed_fact(
                     ContextKey::Diagnostic,
                     "policy-gate-error",
-                    format!("failed to parse DecideRequest: {e}"),
+                    DiagnosticPayload::new(
+                        "arbiter",
+                        format!("expected DecideRequest payload: {e}"),
+                    ),
                 );
                 return AgentEffect::with_proposal(diag);
             }
@@ -135,15 +390,14 @@ impl Suggestor for PolicyGateSuggestor {
 
         match self.engine.evaluate(&req) {
             Ok(decision) => {
-                let content = serde_json::to_string(&decision).unwrap_or_default();
-                let proposal = proposed_fact(self.output_key, "policy-decision", content);
+                let proposal = proposed_fact(self.output_key, "policy-decision", decision);
                 AgentEffect::with_proposal(proposal)
             }
             Err(e) => {
                 let diag = proposed_fact(
                     ContextKey::Diagnostic,
                     "policy-gate-error",
-                    format!("policy evaluation failed: {e}"),
+                    DiagnosticPayload::new("arbiter", format!("policy evaluation failed: {e}")),
                 );
                 AgentEffect::with_proposal(diag)
             }
@@ -211,13 +465,16 @@ impl Suggestor for DelegationVerifySuggestor {
             return AgentEffect::empty();
         };
 
-        let req: DecideRequest = match serde_json::from_str(seed.content()) {
-            Ok(r) => r,
+        let req: DecideRequest = match seed.require_payload::<DecideRequest>() {
+            Ok(r) => r.clone(),
             Err(e) => {
                 let diag = proposed_fact(
                     ContextKey::Diagnostic,
                     "delegation-verify-error",
-                    format!("failed to parse DecideRequest: {e}"),
+                    DiagnosticPayload::new(
+                        "arbiter",
+                        format!("expected DecideRequest payload: {e}"),
+                    ),
                 );
                 return AgentEffect::with_proposal(diag);
             }
@@ -227,24 +484,32 @@ impl Suggestor for DelegationVerifySuggestor {
             let diag = proposed_fact(
                 ContextKey::Diagnostic,
                 "delegation-verify-error",
-                "no delegation_b64 in request",
+                DiagnosticPayload::new("arbiter", "no delegation_b64 in request"),
             );
             return AgentEffect::with_proposal(diag);
         };
 
         match delegation::verify(token_b64, &self.verifying_key, &req) {
             Ok(valid) => {
-                let content = if valid {
-                    r#"{"valid":true}"#.to_string()
-                } else {
-                    r#"{"valid":false,"reason":"constraints not met"}"#.to_string()
-                };
-                let proposal = proposed_fact(self.output_key, "delegation-result", content);
+                let proposal = proposed_fact(
+                    self.output_key,
+                    "delegation-result",
+                    DelegationVerificationPayload {
+                        valid,
+                        reason: (!valid).then(|| "constraints not met".to_string()),
+                    },
+                );
                 AgentEffect::with_proposal(proposal)
             }
             Err(e) => {
-                let content = format!(r#"{{"valid":false,"reason":"{e}"}}"#);
-                let proposal = proposed_fact(self.output_key, "delegation-result", content);
+                let proposal = proposed_fact(
+                    self.output_key,
+                    "delegation-result",
+                    DelegationVerificationPayload {
+                        valid: false,
+                        reason: Some(e),
+                    },
+                );
                 AgentEffect::with_proposal(proposal)
             }
         }
@@ -267,13 +532,13 @@ fn execute_flow_gate(
         return AgentEffect::empty();
     };
 
-    let input: FlowGateInput = match serde_json::from_str(seed.content()) {
-        Ok(i) => i,
+    let input: FlowGateInput = match seed.require_payload::<FlowGateInput>() {
+        Ok(i) => i.clone(),
         Err(e) => {
             let diag = proposed_fact(
                 ContextKey::Diagnostic,
                 error_id,
-                format!("failed to parse FlowGateInput: {e}"),
+                DiagnosticPayload::new("arbiter", format!("expected FlowGateInput payload: {e}")),
             );
             return AgentEffect::with_proposal(diag);
         }
@@ -281,15 +546,14 @@ fn execute_flow_gate(
 
     match engine.evaluate_flow(&input) {
         Ok(decision) => {
-            let content = serde_json::to_string(&decision).unwrap_or_default();
-            let proposal = proposed_fact(output_key, proposal_id, content);
+            let proposal = proposed_fact(output_key, proposal_id, decision);
             AgentEffect::with_proposal(proposal)
         }
         Err(e) => {
             let diag = proposed_fact(
                 ContextKey::Diagnostic,
                 error_id,
-                format!("flow gate evaluation failed: {e}"),
+                DiagnosticPayload::new("arbiter", format!("flow gate evaluation failed: {e}")),
             );
             AgentEffect::with_proposal(diag)
         }
@@ -470,14 +734,12 @@ impl Suggestor for RateLimitGateSuggestor {
         AgentEffect::with_proposal(proposed_fact(
             ContextKey::Constraints,
             "rate-limit-exceeded",
-            serde_json::json!({
-                "gate": "rate-limit",
-                "key": format!("{:?}", self.watched_key),
-                "count": count,
-                "limit": self.max_proposals_per_key,
-                "action": "block",
-            })
-            .to_string(),
+            RateLimitConstraintPayload {
+                key: self.watched_key,
+                count,
+                limit: self.max_proposals_per_key,
+                action: GateConstraintAction::Block,
+            },
         ))
     }
 }
@@ -527,10 +789,9 @@ impl Suggestor for BudgetGateSuggestor {
         let facts = ctx.get(self.cost_key);
         let total_cost: f64 = facts
             .iter()
-            .filter_map(|f| {
-                serde_json::from_str::<serde_json::Value>(f.content())
-                    .ok()
-                    .and_then(|v| v.get("cost").and_then(serde_json::Value::as_f64))
+            .filter_map(|fact| {
+                fact.payload::<CostEstimatePayload>()
+                    .map(|payload| payload.cost)
             })
             .sum();
 
@@ -538,13 +799,11 @@ impl Suggestor for BudgetGateSuggestor {
             AgentEffect::with_proposal(proposed_fact(
                 ContextKey::Constraints,
                 "budget-exceeded",
-                serde_json::json!({
-                    "gate": "budget",
-                    "total_cost": total_cost,
-                    "limit": self.max_cost,
-                    "action": "block",
-                })
-                .to_string(),
+                BudgetConstraintPayload {
+                    total_cost,
+                    limit: self.max_cost,
+                    action: GateConstraintAction::Block,
+                },
             ))
         } else {
             AgentEffect::empty()
@@ -610,23 +869,19 @@ impl Suggestor for ApprovalGateSuggestor {
         .entered();
         let facts = ctx.get(self.watched_key);
         let needs_approval = facts.iter().any(|f| {
-            serde_json::from_str::<serde_json::Value>(f.content())
-                .ok()
-                .and_then(|v| v.get("confidence").and_then(serde_json::Value::as_f64))
-                .is_none_or(|c| c >= self.stakes_threshold)
+            f.payload::<ApprovalRiskPayload>()
+                .is_none_or(|payload| payload.confidence >= self.stakes_threshold)
         });
 
         if needs_approval {
             AgentEffect::with_proposal(proposed_fact(
                 ContextKey::Constraints,
                 "approval-pending",
-                serde_json::json!({
-                    "gate": "approval",
-                    "status": "pending_human_review",
-                    "threshold": self.stakes_threshold,
-                    "action": "pause",
-                })
-                .to_string(),
+                ApprovalConstraintPayload {
+                    status: ApprovalGateStatus::PendingHumanReview,
+                    threshold: self.stakes_threshold,
+                    action: GateConstraintAction::Pause,
+                },
             ))
         } else {
             AgentEffect::empty()
@@ -706,7 +961,7 @@ impl Suggestor for DataClassificationGateSuggestor {
         for fact in facts {
             let mut detected = Vec::new();
             for (label, pattern) in &self.patterns {
-                if pattern.is_match(fact.content()) {
+                if fact.text().is_some_and(|content| pattern.is_match(content)) {
                     detected.push(*label);
                 }
             }
@@ -714,13 +969,11 @@ impl Suggestor for DataClassificationGateSuggestor {
                 proposals.push(proposed_fact(
                     ContextKey::Constraints,
                     format!("pii-detected-{}", fact.id()),
-                    serde_json::json!({
-                        "gate": "data-classification",
-                        "fact_id": fact.id(),
-                        "detected_types": detected,
-                        "action": "block",
-                    })
-                    .to_string(),
+                    DataClassificationConstraintPayload {
+                        fact_id: fact.id().clone(),
+                        detected_types: detected.into_iter().map(str::to_string).collect(),
+                        action: GateConstraintAction::Block,
+                    },
                 ));
             }
         }
@@ -797,18 +1050,22 @@ impl Suggestor for ComplianceGateSuggestor {
         let mut proposals = Vec::new();
 
         for fact in facts {
-            let Ok(value) = serde_json::from_str::<serde_json::Value>(fact.content()) else {
+            let Some(value) = fact.payload::<ComplianceDocumentPayload>() else {
                 continue;
             };
 
             for rule in &self.rules {
                 let violated = match &rule.condition {
-                    ComplianceCondition::FieldMustNotExist => value.get(&rule.field).is_some(),
+                    ComplianceCondition::FieldMustNotExist => {
+                        value.fields.get(&rule.field).is_some()
+                    }
                     ComplianceCondition::MaxValue(max) => value
+                        .fields
                         .get(&rule.field)
                         .and_then(serde_json::Value::as_f64)
                         .is_some_and(|v| v > *max),
                     ComplianceCondition::MustNotContain(forbidden) => value
+                        .fields
                         .get(&rule.field)
                         .and_then(|v| v.as_str())
                         .is_some_and(|s| forbidden.iter().any(|f| s.contains(f.as_str()))),
@@ -818,15 +1075,13 @@ impl Suggestor for ComplianceGateSuggestor {
                     proposals.push(proposed_fact(
                         ContextKey::Constraints,
                         format!("compliance-{}-{}", rule.id, fact.id()),
-                        serde_json::json!({
-                            "gate": "compliance",
-                            "rule_id": rule.id,
-                            "framework": rule.framework,
-                            "fact_id": fact.id(),
-                            "field": rule.field,
-                            "action": "block",
-                        })
-                        .to_string(),
+                        ComplianceConstraintPayload {
+                            rule_id: rule.id.clone(),
+                            framework: rule.framework.clone(),
+                            fact_id: fact.id().clone(),
+                            field: rule.field.clone(),
+                            action: GateConstraintAction::Block,
+                        },
                     ));
                 }
             }
@@ -843,10 +1098,46 @@ mod tests {
         AuthorityLevel, FlowAction, FlowGateContext, FlowGatePrincipal, FlowGateResource, FlowPhase,
     };
     use converge_pack::{
-        ContentHash, ContextFact, FactActor, FactActorKind, FactLocalTrace, FactPromotionRecord,
-        FactTraceLink, FactValidationSummary, Timestamp,
+        ContentHash, ContextFact, FactActor, FactActorKind, FactLocalTrace, FactPayload,
+        FactPromotionRecord, FactTraceLink, FactValidationSummary, TextPayload, Timestamp,
     };
     use std::collections::HashMap;
+
+    #[cfg(feature = "analysis")]
+    #[derive(Debug, Clone, Copy)]
+    struct FixedAnalysisBackend {
+        status: crate::analysis::CedarAnalysisExecutionStatus,
+    }
+
+    #[cfg(feature = "analysis")]
+    #[async_trait::async_trait]
+    impl crate::analysis::CedarAnalysisBackend for FixedAnalysisBackend {
+        fn name(&self) -> &'static str {
+            "fixed-analysis"
+        }
+
+        async fn analyze(
+            &self,
+            input: &crate::analysis::CedarAnalysisInput,
+        ) -> Result<crate::analysis::CedarAnalysisReport, crate::analysis::CedarAnalysisError>
+        {
+            let plan = crate::analysis::compile_analysis_plan(input)?;
+            Ok(crate::analysis::CedarAnalysisReport {
+                plan,
+                execution_identity: converge_pack::ExecutionIdentity::non_native(
+                    env!("CARGO_PKG_NAME"),
+                    env!("CARGO_PKG_VERSION"),
+                    self.name(),
+                    format!(
+                        "invariant_id={}; status={:?}",
+                        input.invariant_id, self.status
+                    ),
+                ),
+                status: self.status,
+                checks: Vec::new(),
+            })
+        }
+    }
 
     struct MockContext {
         facts: HashMap<ContextKey, Vec<ContextFact>>,
@@ -863,12 +1154,12 @@ mod tests {
     fn context_fact(
         key: ContextKey,
         id: impl Into<converge_pack::FactId>,
-        content: impl Into<String>,
+        payload: impl FactPayload + PartialEq,
     ) -> ContextFact {
         ContextFact::new_projection(
             key,
             id,
-            content,
+            payload,
             FactPromotionRecord::new_projection(
                 "policy-test",
                 ContentHash::zero(),
@@ -951,6 +1242,17 @@ mod tests {
         assert_eq!(s.dependencies(), &[ContextKey::Seeds]);
     }
 
+    #[cfg(feature = "analysis")]
+    #[test]
+    fn cedar_analysis_suggestor_name_and_deps() {
+        let s = CedarAnalysisSuggestor::new(FixedAnalysisBackend {
+            status: crate::analysis::CedarAnalysisExecutionStatus::NoViolation,
+        });
+
+        assert_eq!(s.name(), "cedar-analysis");
+        assert_eq!(s.dependencies(), &[ContextKey::Seeds]);
+    }
+
     #[test]
     fn flow_gate_rejects_empty_context() {
         let engine = Arc::new(
@@ -994,11 +1296,7 @@ mod tests {
         let mut ctx = MockContext::empty();
         ctx.facts.insert(
             ContextKey::Seeds,
-            vec![context_fact(
-                ContextKey::Seeds,
-                "flow-gate-input",
-                serde_json::to_string(&input).unwrap(),
-            )],
+            vec![context_fact(ContextKey::Seeds, "flow-gate-input", input)],
         );
 
         assert!(s.accepts(&ctx));
@@ -1010,9 +1308,85 @@ mod tests {
                 .contains("cedar-hitl-gate-decision")
         );
 
-        let decision: crate::PolicyDecision =
-            serde_json::from_str(effect.proposals()[0].content()).unwrap();
+        let decision = effect.proposals()[0]
+            .require_payload::<crate::PolicyDecision>()
+            .unwrap();
         assert_eq!(decision.outcome, crate::PolicyOutcome::Escalate);
+    }
+
+    #[cfg(feature = "analysis")]
+    #[tokio::test]
+    async fn cedar_analysis_suggestor_emits_searched_report() {
+        let s = CedarAnalysisSuggestor::new(FixedAnalysisBackend {
+            status: crate::analysis::CedarAnalysisExecutionStatus::NoViolation,
+        });
+        let input = crate::analysis::CedarAnalysisInput::new(
+            "expense.non_finance_commit.high_value",
+            crate::analysis::CedarAnalysisQuery::ExpenseNonFinanceHighValueCommitDenied,
+            crate::EXPENSE_APPROVAL_POLICY,
+            crate::EXPENSE_APPROVAL_SCHEMA,
+        );
+
+        let mut ctx = MockContext::empty();
+        ctx.facts.insert(
+            ContextKey::Seeds,
+            vec![context_fact(
+                ContextKey::Seeds,
+                "cedar-analysis-input",
+                input,
+            )],
+        );
+
+        assert!(s.accepts(&ctx));
+        let effect = s.execute(&ctx).await;
+
+        assert_eq!(effect.proposals().len(), 1);
+        assert_eq!(effect.proposals()[0].key, ContextKey::Evaluations);
+        assert_eq!(effect.proposals()[0].provenance(), "arbiter");
+        let report = effect.proposals()[0]
+            .require_payload::<crate::analysis::CedarAnalysisReport>()
+            .unwrap();
+        assert_eq!(
+            report.status,
+            crate::analysis::CedarAnalysisExecutionStatus::NoViolation
+        );
+        assert_eq!(
+            report.plan.query,
+            crate::analysis::CedarAnalysisQuery::ExpenseNonFinanceHighValueCommitDenied
+        );
+        assert_eq!(report.execution_identity.backend, "fixed-analysis");
+        assert_eq!(
+            report.execution_identity.producer.name,
+            env!("CARGO_PKG_NAME")
+        );
+    }
+
+    #[cfg(feature = "analysis")]
+    #[tokio::test]
+    async fn cedar_analysis_suggestor_routes_parse_errors_to_diagnostics() {
+        let s = CedarAnalysisSuggestor::new(FixedAnalysisBackend {
+            status: crate::analysis::CedarAnalysisExecutionStatus::NoViolation,
+        });
+
+        let mut ctx = MockContext::empty();
+        ctx.facts.insert(
+            ContextKey::Seeds,
+            vec![context_fact(
+                ContextKey::Seeds,
+                "not-analysis-input",
+                TextPayload::new("{not json"),
+            )],
+        );
+
+        let effect = s.execute(&ctx).await;
+
+        assert_eq!(effect.proposals().len(), 1);
+        assert_eq!(effect.proposals()[0].key, ContextKey::Diagnostic);
+        assert!(
+            effect.proposals()[0]
+                .id
+                .contains("cedar-analysis-parse-error")
+        );
     }
 
     // ── New gate tests ────────────────────────────────────────────
@@ -1073,7 +1447,7 @@ mod tests {
             vec![context_fact(
                 ContextKey::Strategies,
                 "strat-1",
-                "Contact john@example.com for details",
+                TextPayload::new("Contact john@example.com for details"),
             )],
         );
 
@@ -1093,7 +1467,7 @@ mod tests {
             vec![context_fact(
                 ContextKey::Strategies,
                 "strat-1",
-                "Allocate budget across 4 departments",
+                TextPayload::new("Allocate budget across 4 departments"),
             )],
         );
 
@@ -1110,8 +1484,16 @@ mod tests {
         ctx.facts.insert(
             ContextKey::Strategies,
             vec![
-                context_fact(ContextKey::Strategies, "s1", r#"{"cost": 60.0}"#),
-                context_fact(ContextKey::Strategies, "s2", r#"{"cost": 50.0}"#),
+                context_fact(
+                    ContextKey::Strategies,
+                    "s1",
+                    CostEstimatePayload { cost: 60.0 },
+                ),
+                context_fact(
+                    ContextKey::Strategies,
+                    "s2",
+                    CostEstimatePayload { cost: 50.0 },
+                ),
             ],
         );
 
@@ -1129,8 +1511,16 @@ mod tests {
         ctx.facts.insert(
             ContextKey::Strategies,
             vec![
-                context_fact(ContextKey::Strategies, "s1", r#"{"cost": 60.0}"#),
-                context_fact(ContextKey::Strategies, "s2", r#"{"cost": 50.0}"#),
+                context_fact(
+                    ContextKey::Strategies,
+                    "s1",
+                    CostEstimatePayload { cost: 60.0 },
+                ),
+                context_fact(
+                    ContextKey::Strategies,
+                    "s2",
+                    CostEstimatePayload { cost: 50.0 },
+                ),
             ],
         );
 

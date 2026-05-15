@@ -40,6 +40,7 @@ Arbiter should use this lane before adding a separate proof-assistant layer:
 
 ```text
 Gherkin invariant
+  -> review fixture matrix for model adequacy
   -> Cedar policy and schema validation
   -> Cedar runtime regression test
   -> Cedar Analysis / symbolic compiler query
@@ -51,6 +52,14 @@ The analysis result is high-assurance evidence, not direct promotion authority.
 Converge still owns promotion and decides which claim classes require which
 evidence.
 
+The hard part is model adequacy, not proof technology. A solver or proof
+checker can only answer questions about the encoded model. The first Arbiter
+conditional query therefore exposes its Cedar claim policy and carries review
+fixtures that define the positive business case plus boundary cases that must
+fall outside the claim. Negative mutant-policy tests show that a policy that
+allows the positive claim fixture is visibly unsafe even before proof tools are
+considered.
+
 ## Formation Discovery
 
 Arbiter exposes Formation-facing capability descriptors under the stable
@@ -60,7 +69,7 @@ Arbiter exposes Formation-facing capability descriptors under the stable
 |---|---|---|
 | `arbiter.cedar.policy_gate` | `PolicyGateSuggestor` / `policy-gate` | `Decided` |
 | `arbiter.cedar.hitl_gate` | `CedarHitlGateSuggestor` / `cedar-hitl-gate` | `Decided` |
-| `arbiter.cedar.analysis_evidence` | `CedarAnalysisReport` under `analysis` | `Searched` |
+| `arbiter.cedar.analysis_evidence` | `CedarAnalysisSuggestor` / `cedar-analysis` under `analysis` | `Searched` |
 
 This is intentionally a catalog, not a `converge_pack::Pack`
 implementation. Runtime policy gates are Suggestors. Offline Cedar Analysis
@@ -95,12 +104,43 @@ compilation, stable preparation hashes, solver execution, and counterexample
 capture. Solver execution accepts a caller-supplied SymCC solver; the CVC5
 helper resolves `CVC5` first and then `cvc5` on `PATH`.
 
+`CedarAnalysisSuggestor` is the Converge-facing wrapper around this lane. It
+reads typed `CedarAnalysisInput` payload facts, calls a
+`CedarAnalysisBackend`, and emits typed `CedarAnalysisReport` proposals. The
+backend trait lives in Arbiter so product assemblies can provide a solver
+implementation without making Arbiter depend on another extension crate.
+`CedarAnalysisReport` is payload v2 and carries shared Converge
+`ExecutionIdentity` metadata. The default caller-supplied SymCC solver lane
+records non-native execution identity; `LocalCvc5AnalysisBackend` records a native
+external-process identity for the resolved CVC5 binary.
+
+The workspace integration harness now has a `soter-cvc5` feature that wires:
+
+```text
+CedarAnalysisSuggestor
+  -> Arbiter Cedar/SymCC generated SMT
+  -> Soter CVC5 FFI backend
+  -> CedarAnalysisReport
+```
+
+That bridge proves the generated SMT is tied to Arbiter's real Cedar policy
+model rather than only Soter's hand-coded abstract fixture.
+
 ## CVC5 CI Policy
 
 CVC5 support currently means Arbiter can execute SymCC-generated SMT assertions
 with a local CVC5 process and map the result into a `CedarAnalysisReport`.
 That is useful integration evidence, but it is still `Searched` evidence and
 not formal proof evidence.
+
+Current operational status:
+
+- Soter has proven native CVC5 execution through its FFI backend.
+- The workspace integration harness exercises Arbiter's real Cedar/SymCC model
+  through Soter CVC5 using the `soter-cvc5` feature.
+- Arbiter's own local-CVC5 smoke tests exist, but they are ignored by default
+  and require `CVC5` or `cvc5` on `PATH`. Because that path is not yet run as a
+  scheduled/manual CI job, it is not a routinely exercised Arbiter gate.
 
 The policy is explicit:
 
@@ -124,6 +164,16 @@ the high-risk claim space and asks SymCC/CVC5 whether that policy is disjoint
 from the real expense approval policy's allowed requests. `NoViolation` means
 the solver found no modeled request that both satisfies the claim condition and
 is allowed by the real policy.
+
+The encoded claim policy is a public review surface:
+`EXPENSE_NON_FINANCE_HIGH_VALUE_COMMIT_CLAIM_POLICY`. The review fixture lives
+at `crates/arbiter/invariants/expense_non_finance_commit_review.md`.
+
+The broader high-risk claim portfolio is product-side, not hidden inside
+Arbiter. Atelier carries the Truth/scenario exemplar; Arena carries
+cross-extension smoke tests for expense, strict HITL, vendor due diligence,
+flow gates, and data classification. This keeps the expense conditional query
+as the worked exemplar rather than pretending it is portfolio coverage.
 
 ## Ferrox Boundary
 
