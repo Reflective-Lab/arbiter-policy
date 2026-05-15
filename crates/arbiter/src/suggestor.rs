@@ -7,7 +7,6 @@ use converge_pack::{
 };
 use ed25519_dalek::VerifyingKey;
 use serde::{Deserialize, Serialize};
-use tracing::info_span;
 
 #[cfg(feature = "analysis")]
 use crate::analysis::{
@@ -167,39 +166,6 @@ fn proposed_fact(
     PROVENANCE_SOURCE.proposed_fact(key, id, payload)
 }
 
-fn suggestor_span(
-    name: &'static str,
-    input_key: ContextKey,
-    output_key: ContextKey,
-    input_count: usize,
-) -> tracing::Span {
-    info_span!(
-        "arbiter.suggestor.execute",
-        provenance = PROVENANCE_SOURCE.as_str(),
-        suggestor = name,
-        input_key = ?input_key,
-        output_key = ?output_key,
-        input_count
-    )
-}
-
-fn watched_suggestor_span(
-    name: &'static str,
-    watched_key: ContextKey,
-    output_key: ContextKey,
-    input_count: usize,
-) -> tracing::Span {
-    info_span!(
-        "arbiter.suggestor.execute",
-        provenance = PROVENANCE_SOURCE.as_str(),
-        suggestor = name,
-        input_key = ?watched_key,
-        output_key = ?output_key,
-        watched_key = ?watched_key,
-        input_count
-    )
-}
-
 #[cfg(feature = "analysis")]
 fn diagnostic(id: impl Into<ProposalId>, message: impl Into<String>) -> ProposedFact {
     proposed_fact(
@@ -268,17 +234,13 @@ where
         ctx.has(self.input_key) && !ctx.has(self.output_key)
     }
 
-    async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
-        let span = suggestor_span(
-            CEDAR_ANALYSIS_NAME,
-            self.input_key,
-            self.output_key,
-            ctx.count(self.input_key),
-        );
+    fn provenance(&self) -> &'static str {
+        ARBITER_PROVENANCE.as_str()
+    }
 
+    async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
         let mut proposals = Vec::new();
         let mut inputs = Vec::new();
-        let _entered = span.enter();
         for fact in ctx.get(self.input_key) {
             match fact.require_payload::<CedarAnalysisInput>() {
                 Ok(input) => inputs.push(input.clone()),
@@ -290,7 +252,6 @@ where
                 }
             }
         }
-        drop(_entered);
 
         for input in inputs {
             match self.backend.analyze(&input).await {
@@ -362,14 +323,11 @@ impl Suggestor for PolicyGateSuggestor {
         ctx.has(self.input_key) && !ctx.has(self.output_key)
     }
 
+    fn provenance(&self) -> &'static str {
+        ARBITER_PROVENANCE.as_str()
+    }
+
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
-        let _span = suggestor_span(
-            POLICY_GATE_NAME,
-            self.input_key,
-            self.output_key,
-            ctx.count(self.input_key),
-        )
-        .entered();
         let facts = ctx.get(self.input_key);
         let Some(seed) = facts.first() else {
             return AgentEffect::empty();
@@ -454,14 +412,11 @@ impl Suggestor for DelegationVerifySuggestor {
         ctx.has(self.input_key) && !ctx.has(self.output_key)
     }
 
+    fn provenance(&self) -> &'static str {
+        ARBITER_PROVENANCE.as_str()
+    }
+
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
-        let _span = suggestor_span(
-            DELEGATION_VERIFY_NAME,
-            self.input_key,
-            self.output_key,
-            ctx.count(self.input_key),
-        )
-        .entered();
         let facts = ctx.get(self.input_key);
         let Some(seed) = facts.first() else {
             return AgentEffect::empty();
@@ -520,15 +475,12 @@ impl Suggestor for DelegationVerifySuggestor {
 
 fn execute_flow_gate(
     engine: &PolicyEngine,
-    suggestor_name: &'static str,
     input_key: ContextKey,
     output_key: ContextKey,
     proposal_id: &'static str,
     error_id: &'static str,
     ctx: &dyn Context,
 ) -> AgentEffect {
-    let _span =
-        suggestor_span(suggestor_name, input_key, output_key, ctx.count(input_key)).entered();
     let facts = ctx.get(input_key);
     let Some(seed) = facts.first() else {
         return AgentEffect::empty();
@@ -615,10 +567,13 @@ impl Suggestor for CedarHitlGateSuggestor {
         ctx.has(self.input_key) && !ctx.has(self.output_key)
     }
 
+    fn provenance(&self) -> &'static str {
+        ARBITER_PROVENANCE.as_str()
+    }
+
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
         execute_flow_gate(
             self.engine.as_ref(),
-            CEDAR_HITL_GATE_NAME,
             self.input_key,
             self.output_key,
             "cedar-hitl-gate-decision",
@@ -674,10 +629,13 @@ impl Suggestor for FlowGateSuggestor {
         ctx.has(self.input_key) && !ctx.has(self.output_key)
     }
 
+    fn provenance(&self) -> &'static str {
+        ARBITER_PROVENANCE.as_str()
+    }
+
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
         execute_flow_gate(
             self.engine.as_ref(),
-            FLOW_GATE_NAME,
             self.input_key,
             self.output_key,
             "flow-gate-decision",
@@ -724,14 +682,11 @@ impl Suggestor for RateLimitGateSuggestor {
                 .any(|f| f.id() == "rate-limit-exceeded")
     }
 
+    fn provenance(&self) -> &'static str {
+        ARBITER_PROVENANCE.as_str()
+    }
+
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
-        let _span = watched_suggestor_span(
-            RATE_LIMIT_GATE_NAME,
-            self.watched_key,
-            ContextKey::Constraints,
-            ctx.count(self.watched_key),
-        )
-        .entered();
         let count = ctx.count(self.watched_key);
         AgentEffect::with_proposal(proposed_fact(
             ContextKey::Constraints,
@@ -780,14 +735,11 @@ impl Suggestor for BudgetGateSuggestor {
                 .any(|f| f.id() == "budget-exceeded")
     }
 
+    fn provenance(&self) -> &'static str {
+        ARBITER_PROVENANCE.as_str()
+    }
+
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
-        let _span = suggestor_span(
-            BUDGET_GATE_NAME,
-            self.cost_key,
-            ContextKey::Constraints,
-            ctx.count(self.cost_key),
-        )
-        .entered();
         let facts = ctx.get(self.cost_key);
         let total_cost: f64 = facts
             .iter()
@@ -861,14 +813,11 @@ impl Suggestor for ApprovalGateSuggestor {
                 .any(|f| f.id() == "approval-pending")
     }
 
+    fn provenance(&self) -> &'static str {
+        ARBITER_PROVENANCE.as_str()
+    }
+
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
-        let _span = suggestor_span(
-            APPROVAL_GATE_NAME,
-            self.watched_key,
-            self.approval_key,
-            ctx.count(self.watched_key),
-        )
-        .entered();
         let facts = ctx.get(self.watched_key);
         let needs_approval = facts.iter().any(|f| {
             f.payload::<ApprovalRiskPayload>()
@@ -949,14 +898,11 @@ impl Suggestor for DataClassificationGateSuggestor {
                 .any(|f| f.id().as_str().starts_with("pii-detected-"))
     }
 
+    fn provenance(&self) -> &'static str {
+        ARBITER_PROVENANCE.as_str()
+    }
+
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
-        let _span = suggestor_span(
-            DATA_CLASSIFICATION_GATE_NAME,
-            self.watched_key,
-            ContextKey::Constraints,
-            ctx.count(self.watched_key),
-        )
-        .entered();
         let facts = ctx.get(self.watched_key);
         let mut proposals = Vec::new();
 
@@ -1040,14 +986,11 @@ impl Suggestor for ComplianceGateSuggestor {
                 .any(|f| f.id().as_str().starts_with("compliance-"))
     }
 
+    fn provenance(&self) -> &'static str {
+        ARBITER_PROVENANCE.as_str()
+    }
+
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
-        let _span = suggestor_span(
-            COMPLIANCE_GATE_NAME,
-            self.watched_key,
-            ContextKey::Constraints,
-            ctx.count(self.watched_key),
-        )
-        .entered();
         let facts = ctx.get(self.watched_key);
         let mut proposals = Vec::new();
 
