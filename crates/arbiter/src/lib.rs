@@ -47,7 +47,7 @@ pub use formation::{
     ArbiterFormationCapability, ArbiterFormationCapabilityKind, HITL_GATE_CAPABILITY_ID,
     POLICY_GATE_CAPABILITY_ID, find_formation_capability, formation_capabilities,
 };
-pub use provenance::{ProvenanceSource, UnknownProvenanceSource};
+pub use provenance::{ARBITER_PROVENANCE, Arbiter};
 #[cfg(feature = "analysis")]
 pub use suggestor::CedarAnalysisSuggestor;
 pub use suggestor::{

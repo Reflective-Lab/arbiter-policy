@@ -13,12 +13,14 @@ use tracing::info_span;
 use crate::analysis::{
     CedarAnalysisBackend, CedarAnalysisExecutionStatus, CedarAnalysisInput, CedarAnalysisReport,
 };
+use converge_pack::ProvenanceSource;
+
 use crate::delegation;
 use crate::engine::PolicyEngine;
-use crate::provenance::ProvenanceSource;
+use crate::provenance::{ARBITER_PROVENANCE, Arbiter};
 use crate::types::DecideRequest;
 
-const PROVENANCE_SOURCE: ProvenanceSource = ProvenanceSource::Arbiter;
+const PROVENANCE_SOURCE: Arbiter = ARBITER_PROVENANCE;
 const POLICY_GATE_NAME: &str = "policy-gate";
 const DELEGATION_VERIFY_NAME: &str = "delegation-verify";
 const CEDAR_HITL_GATE_NAME: &str = "cedar-hitl-gate";
