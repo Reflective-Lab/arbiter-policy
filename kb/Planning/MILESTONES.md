@@ -5,9 +5,36 @@ source: mixed
 
 > See `~/dev/reflective/stack/bedrock-platform/EPIC.md` for the coarse-grained outcomes these milestones advance.
 
-## Current: v1.1.1 — Converge 3.8.1 Policy Foundation
+## Shipped: v2.0.1 — Converge 3.9.1 alignment (2026-05-17)
 
-**Target:** 2026-05 | **Tracks:** Converge 3.8.1
+**Tracks:** Converge 3.9.1
+
+- [x] Bump workspace `converge-core` / `converge-pack` deps to `3.9.1`.
+- [x] Drop stale `[patch.crates-io]` bedrock-platform overrides from CI.
+- [x] Migrate Arbiter `ProposedFact` provenance to the `converge-pack`
+  `ProvenanceSource` trait (no per-crate provenance vocabulary).
+- [x] Remove per-crate `suggestor_span`; rely on the engine-emitted
+  `arbiter.suggestor.execute` span.
+- [x] Clean `just release-check` run.
+- [x] Tag and publish `converge-arbiter-policy@2.0.1` to crates.io.
+
+## Shipped: v2.0.0 — Cedar analysis ExecutionIdentity (2026-05-17)
+
+**Tracks:** Converge 3.8.1 (committed 2026-05-15, published 2026-05-17)
+
+- [x] **BREAKING:** `CedarAnalysisReport` family version `2`, with a required
+  `ExecutionIdentity` describing the SymCC/CVC5 execution backend.
+- [x] Typed `FactPayload` boundary for Cedar Analysis input, plan, and report
+  payloads (no string-content proposal payloads in process).
+- [x] `CedarAnalysisBackend` + `LocalCvc5AnalysisBackend` for optional
+  solver-backed Cedar Analysis without CVC5 as a required CI dependency.
+- [x] Model-adequacy review material for the expense / non-finance
+  high-value commit invariant.
+- [x] Strict `serde` field validation at the typed payload boundary.
+
+## Historical: v1.1.1 — Converge 3.8.1 Policy Foundation (2026-05-14)
+
+**Tracks:** Converge 3.8.1
 
 - [x] Keep workspace package version at `1.1.1`.
 - [x] Keep Converge dependencies on the `3.8.1` contract baseline.

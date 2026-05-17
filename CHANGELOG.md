@@ -4,6 +4,17 @@ All notable changes to arbiter will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-05-17
+
+### Changed
+
+- Bumped Converge floor to `3.9.1` (`converge-core`, `converge-pack`).
+- Migrated Arbiter `ProposedFact` provenance to the `converge-pack`
+  `ProvenanceSource` trait; removed the per-crate provenance vocabulary.
+- Removed per-crate `suggestor_span`; the engine now emits the
+  `arbiter.suggestor.execute` span itself.
+- Dropped stale `[patch.crates-io]` bedrock-platform overrides from CI.
+
 ## [2.0.0] - 2026-05-15
 
 ### Added
