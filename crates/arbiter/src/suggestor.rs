@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use converge_core::FlowGateInput;
 use converge_pack::{
@@ -842,6 +842,34 @@ impl Suggestor for ApprovalGateSuggestor {
 
 // --- DataClassificationGateSuggestor ---
 
+/// Default PII patterns compiled once at process start.
+///
+/// `expect()` inside `LazyLock::new` is acceptable: it fires exactly once on first access
+/// (at process start, not per-request), so it cannot cause per-request panics.
+static DEFAULT_PII_PATTERNS: LazyLock<Vec<(&'static str, regex::Regex)>> = LazyLock::new(|| {
+    vec![
+        (
+            "email",
+            regex::Regex::new(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
+                .expect("email regex"),
+        ),
+        (
+            "ssn",
+            regex::Regex::new(r"\b\d{3}-\d{2}-\d{4}\b").expect("SSN regex"),
+        ),
+        (
+            "credit_card",
+            regex::Regex::new(r"\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b")
+                .expect("credit-card regex"),
+        ),
+        (
+            "phone",
+            regex::Regex::new(r"\b\+?\d{1,3}[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b")
+                .expect("phone regex"),
+        ),
+    ]
+});
+
 /// Blocks proposals containing PII or sensitive data patterns from crossing boundaries.
 /// Scans proposal content for configurable patterns (emails, SSNs, credit cards, etc.).
 pub struct DataClassificationGateSuggestor {
@@ -850,32 +878,15 @@ pub struct DataClassificationGateSuggestor {
 }
 
 impl DataClassificationGateSuggestor {
-    /// Create with default PII patterns (email, SSN, credit card).
+    /// Create with default PII patterns (email, SSN, credit card, phone).
+    ///
+    /// Patterns are compiled once via [`DEFAULT_PII_PATTERNS`] and cloned here,
+    /// so construction is cheap after the first call.
     #[must_use]
     pub fn default_patterns(watched_key: ContextKey) -> Self {
         Self {
             watched_key,
-            patterns: vec![
-                (
-                    "email",
-                    regex::Regex::new(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
-                        .expect("valid regex"),
-                ),
-                (
-                    "ssn",
-                    regex::Regex::new(r"\b\d{3}-\d{2}-\d{4}\b").expect("valid regex"),
-                ),
-                (
-                    "credit_card",
-                    regex::Regex::new(r"\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b")
-                        .expect("valid regex"),
-                ),
-                (
-                    "phone",
-                    regex::Regex::new(r"\b\+?\d{1,3}[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b")
-                        .expect("valid regex"),
-                ),
-            ],
+            patterns: DEFAULT_PII_PATTERNS.clone(),
         }
     }
 }
