@@ -16,6 +16,7 @@ use converge_pack::ProvenanceSource;
 
 use crate::delegation;
 use crate::engine::PolicyEngine;
+use crate::primitives::{Confidence, CostUsd, ProposalCount, ProposalLimit};
 use crate::provenance::{ARBITER_PROVENANCE, Arbiter};
 use crate::types::DecideRequest;
 
@@ -48,7 +49,7 @@ pub enum ApprovalGateStatus {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CostEstimatePayload {
-    pub cost: f64,
+    pub cost: CostUsd,
 }
 
 impl FactPayload for CostEstimatePayload {
@@ -59,7 +60,7 @@ impl FactPayload for CostEstimatePayload {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ApprovalRiskPayload {
-    pub confidence: f64,
+    pub confidence: Confidence,
 }
 
 impl FactPayload for ApprovalRiskPayload {
@@ -94,8 +95,8 @@ impl FactPayload for DelegationVerificationPayload {
 #[serde(deny_unknown_fields)]
 pub struct RateLimitConstraintPayload {
     pub key: ContextKey,
-    pub count: usize,
-    pub limit: usize,
+    pub count: ProposalCount,
+    pub limit: ProposalLimit,
     pub action: GateConstraintAction,
 }
 
@@ -107,8 +108,8 @@ impl FactPayload for RateLimitConstraintPayload {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BudgetConstraintPayload {
-    pub total_cost: f64,
-    pub limit: f64,
+    pub total_cost: CostUsd,
+    pub limit: CostUsd,
     pub action: GateConstraintAction,
 }
 
@@ -121,7 +122,7 @@ impl FactPayload for BudgetConstraintPayload {
 #[serde(deny_unknown_fields)]
 pub struct ApprovalConstraintPayload {
     pub status: ApprovalGateStatus,
-    pub threshold: f64,
+    pub threshold: Confidence,
     pub action: GateConstraintAction,
 }
 
@@ -693,8 +694,8 @@ impl Suggestor for RateLimitGateSuggestor {
             "rate-limit-exceeded",
             RateLimitConstraintPayload {
                 key: self.watched_key,
-                count,
-                limit: self.max_proposals_per_key,
+                count: ProposalCount(count),
+                limit: ProposalLimit(self.max_proposals_per_key),
                 action: GateConstraintAction::Block,
             },
         ))
@@ -706,14 +707,17 @@ impl Suggestor for RateLimitGateSuggestor {
 /// Enforces a cost/token budget within a convergence run.
 /// Reads cost estimates from proposals and blocks when cumulative cost exceeds the limit.
 pub struct BudgetGateSuggestor {
-    max_cost: f64,
+    max_cost: CostUsd,
     cost_key: ContextKey,
 }
 
 impl BudgetGateSuggestor {
     #[must_use]
     pub fn new(cost_key: ContextKey, max_cost: f64) -> Self {
-        Self { max_cost, cost_key }
+        Self {
+            max_cost: CostUsd::clamped(max_cost),
+            cost_key,
+        }
     }
 }
 
@@ -741,13 +745,14 @@ impl Suggestor for BudgetGateSuggestor {
 
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
         let facts = ctx.get(self.cost_key);
-        let total_cost: f64 = facts
+        let total_raw: f64 = facts
             .iter()
             .filter_map(|fact| {
                 fact.payload::<CostEstimatePayload>()
-                    .map(|payload| payload.cost)
+                    .map(|payload| payload.cost.value())
             })
             .sum();
+        let total_cost = CostUsd::clamped(total_raw);
 
         if total_cost > self.max_cost {
             AgentEffect::with_proposal(proposed_fact(
@@ -772,7 +777,7 @@ impl Suggestor for BudgetGateSuggestor {
 pub struct ApprovalGateSuggestor {
     watched_key: ContextKey,
     approval_key: ContextKey,
-    stakes_threshold: f64,
+    stakes_threshold: Confidence,
 }
 
 impl ApprovalGateSuggestor {
@@ -783,7 +788,7 @@ impl ApprovalGateSuggestor {
         Self {
             watched_key,
             approval_key: ContextKey::Signals,
-            stakes_threshold,
+            stakes_threshold: Confidence::clamped(stakes_threshold),
         }
     }
 
@@ -1443,12 +1448,16 @@ mod tests {
                 context_fact(
                     ContextKey::Strategies,
                     "s1",
-                    CostEstimatePayload { cost: 60.0 },
+                    CostEstimatePayload {
+                        cost: CostUsd::new(60.0).unwrap(),
+                    },
                 ),
                 context_fact(
                     ContextKey::Strategies,
                     "s2",
-                    CostEstimatePayload { cost: 50.0 },
+                    CostEstimatePayload {
+                        cost: CostUsd::new(50.0).unwrap(),
+                    },
                 ),
             ],
         );
@@ -1470,12 +1479,16 @@ mod tests {
                 context_fact(
                     ContextKey::Strategies,
                     "s1",
-                    CostEstimatePayload { cost: 60.0 },
+                    CostEstimatePayload {
+                        cost: CostUsd::new(60.0).unwrap(),
+                    },
                 ),
                 context_fact(
                     ContextKey::Strategies,
                     "s2",
-                    CostEstimatePayload { cost: 50.0 },
+                    CostEstimatePayload {
+                        cost: CostUsd::new(50.0).unwrap(),
+                    },
                 ),
             ],
         );

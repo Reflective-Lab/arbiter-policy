@@ -9,6 +9,7 @@ use ciborium::{de, ser};
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use serde::{Deserialize, Serialize};
 
+use crate::primitives::EpochSeconds;
 use crate::types::DecideRequest;
 use converge_core::{AuthorityLevel, FlowAction};
 use converge_pack::{ActorId, PrincipalId};
@@ -29,9 +30,9 @@ pub struct Delegation {
     /// Optional spending cap
     pub max_amount: Option<i64>,
     /// Not-before (epoch seconds)
-    pub nbf_epoch: i64,
+    pub nbf_epoch: EpochSeconds,
     /// Expires (epoch seconds)
-    pub exp_epoch: i64,
+    pub exp_epoch: EpochSeconds,
     /// Nonce for replay protection
     pub jti: String,
     /// Ed25519 signature over all fields except sig
@@ -47,8 +48,8 @@ pub struct IssueDelegationReq {
     pub actions: Vec<FlowAction>,
     pub resource_pattern: String,
     pub max_amount: Option<i64>,
-    pub nbf_epoch: i64,
-    pub exp_epoch: i64,
+    pub nbf_epoch: EpochSeconds,
+    pub exp_epoch: EpochSeconds,
     pub jti: String,
 }
 
@@ -136,7 +137,6 @@ pub fn issue(
 /// # Errors
 ///
 /// Returns `Err` if the token cannot be decoded, parsed, or the time source is invalid.
-#[allow(clippy::cast_possible_wrap)]
 pub fn verify(b64: &str, vkey: &VerifyingKey, req: &DecideRequest) -> Result<bool, String> {
     let raw = general_purpose::STANDARD_NO_PAD
         .decode(b64)
@@ -157,10 +157,12 @@ pub fn verify(b64: &str, vkey: &VerifyingKey, req: &DecideRequest) -> Result<boo
     }
 
     // Check time window
-    let now_epoch = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|err| format!("time source invalid: {err}"))?
-        .as_secs() as i64;
+    let now_epoch = EpochSeconds(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|err| format!("time source invalid: {err}"))?
+            .as_secs() as i64,
+    );
     if now_epoch < del.nbf_epoch || now_epoch > del.exp_epoch {
         return Ok(false);
     }
@@ -207,8 +209,8 @@ mod tests {
             actions: vec![FlowAction::Commit],
             resource_pattern: "flow:quote-*".into(),
             max_amount: Some(50_000),
-            nbf_epoch: 1_000_000,
-            exp_epoch: 2_000_000,
+            nbf_epoch: EpochSeconds(1_000_000),
+            exp_epoch: EpochSeconds(2_000_000),
             jti: "nonce-1".into(),
         }
     }
@@ -305,8 +307,8 @@ mod tests {
             actions: vec![FlowAction::Commit],
             resource_pattern: "flow:quote-*".into(),
             max_amount: Some(50_000),
-            nbf_epoch: now - 100,
-            exp_epoch: now + 3600,
+            nbf_epoch: EpochSeconds(now - 100),
+            exp_epoch: EpochSeconds(now + 3600),
             jti: "nonce-rt".into(),
         };
 
@@ -355,8 +357,8 @@ mod tests {
             actions: vec![FlowAction::Commit],
             resource_pattern: "flow:*".into(),
             max_amount: None,
-            nbf_epoch: now - 100,
-            exp_epoch: now + 3600,
+            nbf_epoch: EpochSeconds(now - 100),
+            exp_epoch: EpochSeconds(now + 3600),
             jti: "nonce-wp".into(),
         };
 
@@ -400,8 +402,8 @@ mod tests {
             actions: vec![FlowAction::Commit],
             resource_pattern: "flow:*".into(),
             max_amount: Some(1_000),
-            nbf_epoch: now - 100,
-            exp_epoch: now + 3600,
+            nbf_epoch: EpochSeconds(now - 100),
+            exp_epoch: EpochSeconds(now + 3600),
             jti: "nonce-cap".into(),
         };
 

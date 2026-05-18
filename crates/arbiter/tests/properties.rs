@@ -4,7 +4,7 @@ use ed25519_dalek::SigningKey;
 use proptest::prelude::*;
 
 use arbiter::{
-    PolicyOutcome,
+    EpochSeconds, PolicyOutcome,
     delegation::{IssueDelegationReq, issue, verify},
 };
 use converge_core::AuthorityLevel;
@@ -89,8 +89,8 @@ proptest! {
                 actions: vec![req.action],
                 resource_pattern: "flow:test-*".into(),
                 max_amount: Some(max_amount),
-                nbf_epoch: 0,
-                exp_epoch: i64::MAX / 2,
+                nbf_epoch: EpochSeconds(0),
+                exp_epoch: EpochSeconds(i64::MAX / 2),
                 jti,
             },
         ).expect("delegation should issue");
@@ -125,8 +125,8 @@ proptest! {
                 actions: vec![req.action],
                 resource_pattern: "flow:test-*".into(),
                 max_amount: Some(max_amount),
-                nbf_epoch: 0,
-                exp_epoch: i64::MAX / 2,
+                nbf_epoch: EpochSeconds(0),
+                exp_epoch: EpochSeconds(i64::MAX / 2),
                 jti,
             },
         ).expect("delegation should issue");

@@ -29,6 +29,7 @@
 pub mod analysis;
 pub mod engine;
 pub mod formation;
+pub mod primitives;
 pub mod provenance;
 pub mod suggestor;
 pub mod types;
@@ -42,6 +43,7 @@ pub use analysis::{
     execute_analysis_with_solver, execute_analysis_with_solver_and_identity,
 };
 pub use engine::PolicyEngine;
+pub use primitives::{Confidence, CostUsd, EpochSeconds, ProposalCount, ProposalLimit};
 pub use formation::{
     ANALYSIS_EVIDENCE_CAPABILITY_ID, ARBITER_FORMATION_CAPABILITIES, ARBITER_FORMATION_PACK_ID,
     ArbiterFormationCapability, ArbiterFormationCapabilityKind, HITL_GATE_CAPABILITY_ID,
