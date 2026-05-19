@@ -968,13 +968,58 @@ pub struct ComplianceRule {
 }
 
 /// What triggers a compliance violation.
+///
+/// The original three variants (`FieldMustNotExist`, `MaxValue`,
+/// `MustNotContain`) cover the most common rule shapes. The
+/// remaining four cover the cases that come up once you start
+/// authoring rules from real regulatory text:
+///
+/// - `RegexMatch` — when the violation is a pattern (PCI card
+///   prefixes, OFAC name patterns, classification tag formats).
+/// - `NumericRange` — when both a floor and a ceiling matter
+///   (transaction amounts under a reporting threshold AND above a
+///   minimum-fee filter).
+/// - `CrossField` — when the violation requires a *combination* of
+///   field values (e.g. `data_classification == "PHI" → encryption
+///   == true`). A single-field rule cannot express this.
+/// - `MembershipInVersionedList` — when the violation is membership
+///   in a sanctions / blocklist / quarantine list that is versioned
+///   externally (OFAC publishes daily updates). Pinning the list
+///   version is required so an audit log can be reproduced months
+///   later against the same list state.
 pub enum ComplianceCondition {
     /// Field must not be present.
     FieldMustNotExist,
     /// Field value must not exceed this numeric threshold.
     MaxValue(f64),
-    /// Field value must not contain these strings.
+    /// Field value must not contain any of these substrings.
     MustNotContain(Vec<String>),
+    /// Field value (string) must not match this regex.
+    RegexMatch(String),
+    /// Field value (numeric) must lie within `[lo, hi]` (inclusive).
+    /// A value outside the range is a violation.
+    NumericRange { lo: f64, hi: f64 },
+    /// If `antecedent_field == antecedent_value`, then
+    /// `consequent_field` must equal `consequent_value`. A document
+    /// where the antecedent holds but the consequent does not is a
+    /// violation. Encodes single-rule cross-field implications
+    /// without requiring composite rules.
+    CrossField {
+        antecedent_field: String,
+        antecedent_value: String,
+        consequent_field: String,
+        consequent_value: String,
+    },
+    /// Field value (string) must not be a member of a versioned
+    /// external list. The `list_id` + `version` pair pins the
+    /// snapshot of the list this rule was authored against, so
+    /// audit reproducibility is preserved when the list is later
+    /// updated by its publisher.
+    MembershipInVersionedList {
+        list_id: String,
+        version: String,
+        members: Vec<String>,
+    },
 }
 
 impl ComplianceGateSuggestor {
@@ -1030,6 +1075,44 @@ impl Suggestor for ComplianceGateSuggestor {
                         .get(&rule.field)
                         .and_then(|v| v.as_str())
                         .is_some_and(|s| forbidden.iter().any(|f| s.contains(f.as_str()))),
+                    ComplianceCondition::RegexMatch(pattern) => value
+                        .fields
+                        .get(&rule.field)
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| regex::Regex::new(pattern).ok().map(|re| re.is_match(s)))
+                        .unwrap_or(false),
+                    ComplianceCondition::NumericRange { lo, hi } => value
+                        .fields
+                        .get(&rule.field)
+                        .and_then(serde_json::Value::as_f64)
+                        .is_some_and(|v| v < *lo || v > *hi),
+                    ComplianceCondition::CrossField {
+                        antecedent_field,
+                        antecedent_value,
+                        consequent_field,
+                        consequent_value,
+                    } => {
+                        let antecedent_holds = value
+                            .fields
+                            .get(antecedent_field)
+                            .and_then(|v| v.as_str())
+                            .is_some_and(|s| s == antecedent_value);
+                        if antecedent_holds {
+                            let consequent_holds = value
+                                .fields
+                                .get(consequent_field)
+                                .and_then(|v| v.as_str())
+                                .is_some_and(|s| s == consequent_value);
+                            !consequent_holds
+                        } else {
+                            false
+                        }
+                    }
+                    ComplianceCondition::MembershipInVersionedList { members, .. } => value
+                        .fields
+                        .get(&rule.field)
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|s| members.iter().any(|m| s == m.as_str())),
                 };
 
                 if violated {
