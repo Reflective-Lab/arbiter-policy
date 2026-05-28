@@ -43,12 +43,12 @@ pub use analysis::{
     execute_analysis_with_solver, execute_analysis_with_solver_and_identity,
 };
 pub use engine::PolicyEngine;
-pub use primitives::{Confidence, CostUsd, EpochSeconds, ProposalCount, ProposalLimit};
 pub use formation::{
     ANALYSIS_EVIDENCE_CAPABILITY_ID, ARBITER_FORMATION_CAPABILITIES, ARBITER_FORMATION_PACK_ID,
     ArbiterFormationCapability, ArbiterFormationCapabilityKind, HITL_GATE_CAPABILITY_ID,
     POLICY_GATE_CAPABILITY_ID, find_formation_capability, formation_capabilities,
 };
+pub use primitives::{Confidence, CostUsd, EpochSeconds, ProposalCount, ProposalLimit};
 pub use provenance::{ARBITER_PROVENANCE, Arbiter};
 #[cfg(feature = "analysis")]
 pub use suggestor::CedarAnalysisSuggestor;
