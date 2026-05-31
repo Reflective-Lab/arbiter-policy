@@ -3,7 +3,7 @@ use std::sync::{Arc, LazyLock};
 use converge_core::FlowGateInput;
 use converge_pack::{
     AgentEffect, Context, ContextKey, DiagnosticPayload, FactId, FactPayload, ProposalId,
-    Suggestor, fact::ProposedFact,
+    Provenance, Suggestor, fact::ProposedFact,
 };
 use ed25519_dalek::VerifyingKey;
 use serde::{Deserialize, Serialize};
@@ -235,8 +235,8 @@ where
         ctx.has(self.input_key) && !ctx.has(self.output_key)
     }
 
-    fn provenance(&self) -> &'static str {
-        ARBITER_PROVENANCE.as_str()
+    fn provenance(&self) -> Provenance {
+        Provenance::from(ARBITER_PROVENANCE.as_str())
     }
 
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
@@ -324,8 +324,8 @@ impl Suggestor for PolicyGateSuggestor {
         ctx.has(self.input_key) && !ctx.has(self.output_key)
     }
 
-    fn provenance(&self) -> &'static str {
-        ARBITER_PROVENANCE.as_str()
+    fn provenance(&self) -> Provenance {
+        Provenance::from(ARBITER_PROVENANCE.as_str())
     }
 
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
@@ -413,8 +413,8 @@ impl Suggestor for DelegationVerifySuggestor {
         ctx.has(self.input_key) && !ctx.has(self.output_key)
     }
 
-    fn provenance(&self) -> &'static str {
-        ARBITER_PROVENANCE.as_str()
+    fn provenance(&self) -> Provenance {
+        Provenance::from(ARBITER_PROVENANCE.as_str())
     }
 
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
@@ -568,8 +568,8 @@ impl Suggestor for CedarHitlGateSuggestor {
         ctx.has(self.input_key) && !ctx.has(self.output_key)
     }
 
-    fn provenance(&self) -> &'static str {
-        ARBITER_PROVENANCE.as_str()
+    fn provenance(&self) -> Provenance {
+        Provenance::from(ARBITER_PROVENANCE.as_str())
     }
 
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
@@ -630,8 +630,8 @@ impl Suggestor for FlowGateSuggestor {
         ctx.has(self.input_key) && !ctx.has(self.output_key)
     }
 
-    fn provenance(&self) -> &'static str {
-        ARBITER_PROVENANCE.as_str()
+    fn provenance(&self) -> Provenance {
+        Provenance::from(ARBITER_PROVENANCE.as_str())
     }
 
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
@@ -683,8 +683,8 @@ impl Suggestor for RateLimitGateSuggestor {
                 .any(|f| f.id() == "rate-limit-exceeded")
     }
 
-    fn provenance(&self) -> &'static str {
-        ARBITER_PROVENANCE.as_str()
+    fn provenance(&self) -> Provenance {
+        Provenance::from(ARBITER_PROVENANCE.as_str())
     }
 
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
@@ -739,8 +739,8 @@ impl Suggestor for BudgetGateSuggestor {
                 .any(|f| f.id() == "budget-exceeded")
     }
 
-    fn provenance(&self) -> &'static str {
-        ARBITER_PROVENANCE.as_str()
+    fn provenance(&self) -> Provenance {
+        Provenance::from(ARBITER_PROVENANCE.as_str())
     }
 
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
@@ -818,8 +818,8 @@ impl Suggestor for ApprovalGateSuggestor {
                 .any(|f| f.id() == "approval-pending")
     }
 
-    fn provenance(&self) -> &'static str {
-        ARBITER_PROVENANCE.as_str()
+    fn provenance(&self) -> Provenance {
+        Provenance::from(ARBITER_PROVENANCE.as_str())
     }
 
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
@@ -914,8 +914,8 @@ impl Suggestor for DataClassificationGateSuggestor {
                 .any(|f| f.id().as_str().starts_with("pii-detected-"))
     }
 
-    fn provenance(&self) -> &'static str {
-        ARBITER_PROVENANCE.as_str()
+    fn provenance(&self) -> Provenance {
+        Provenance::from(ARBITER_PROVENANCE.as_str())
     }
 
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
@@ -1047,8 +1047,8 @@ impl Suggestor for ComplianceGateSuggestor {
                 .any(|f| f.id().as_str().starts_with("compliance-"))
     }
 
-    fn provenance(&self) -> &'static str {
-        ARBITER_PROVENANCE.as_str()
+    fn provenance(&self) -> Provenance {
+        Provenance::from(ARBITER_PROVENANCE.as_str())
     }
 
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {

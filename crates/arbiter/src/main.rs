@@ -106,13 +106,12 @@ impl ServerConfig {
             .map_or_else(|_| PathBuf::from("policies/policy.cedar"), PathBuf::from);
 
         let issue_delegation_enabled = std::env::var("POLICY_ENABLE_DELEGATION_ISSUANCE")
-            .map(|value| {
+            .is_ok_and(|value| {
                 matches!(
                     value.trim().to_ascii_lowercase().as_str(),
                     "1" | "true" | "yes"
                 )
-            })
-            .unwrap_or(false);
+            });
 
         let issue_admin_token = std::env::var("POLICY_ISSUE_ADMIN_TOKEN")
             .ok()
