@@ -31,7 +31,7 @@ converge-pack.workspace = true
 async-trait.workspace = true
 
 # Policy engine
-cedar-policy.workspace = true
+cedar-policy = { workspace = true, default-features = false, features = ["ipaddr", "decimal"] }
 cedar-policy-symcc = { workspace = true, optional = true }
 
 # HTTP server
