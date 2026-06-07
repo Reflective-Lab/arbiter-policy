@@ -15,7 +15,7 @@ A clear and concise description of what the bug is.
 
 ## Environment
 - OS: [e.g., macOS, Linux]
-- Rust version: [e.g., 1.94.0]
+- Rust version: [e.g., 1.96.0]
 - arbiter version: [e.g., 1.0.0]
 
 ## Logs
