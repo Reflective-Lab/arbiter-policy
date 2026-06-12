@@ -11,6 +11,10 @@ Knowledge base for the `arbiter` Converge extension.
 
 **Meta:** [[INDEX]] — entity catalog | [[LOG]] — mutation log
 
+## Positioning
+
+- [[Positioning]] — elevator pitch, LLM synergy, Cedar/SMT USPs
+
 ## Architecture
 
 - [[Architecture/Cedar Analytics and Formal Evidence]] — Cedar analytics first, with Lean and SMT boundaries

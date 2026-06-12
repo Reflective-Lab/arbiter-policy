@@ -196,9 +196,8 @@ including richer CP-SAT constraints, routing, graph algorithms, assignment,
 knapsack, MathOpt, and PDLP. That broader C++ surface is still optimization and
 constraint programming infrastructure, not a native SMT front end.
 
-Important local note: the Ferrox docs mention OR-Tools `v9.15`, but the current
-vendored checkout/build reports OR-Tools `v9.11`. Reconcile that before
-expanding the OR-Tools wrapper.
+Reconciled 2026-06-12: the Ferrox Makefile pins `ORTOOLS_TAG := v9.15` and the
+vendored checkout reports `v9.15`, matching the Ferrox docs.
 
 ## Arbiter Boundary
 

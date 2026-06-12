@@ -5,6 +5,10 @@ source: llm
 
 Major entities in the `arbiter` knowledge base.
 
+## Positioning
+
+- [Positioning](Positioning.md) — elevator pitch, LLM synergy, Cedar/SMT USPs
+
 ## Architecture
 
 - [Cedar Analytics and Formal Evidence](Architecture/Cedar%20Analytics%20and%20Formal%20Evidence.md) — boundary between Cedar analytics, Lean predicates, SMT, Ferrox, and Prism
