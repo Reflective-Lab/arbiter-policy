@@ -2,8 +2,8 @@ use std::sync::{Arc, LazyLock};
 
 use converge_core::FlowGateInput;
 use converge_pack::{
-    AgentEffect, Context, ContextKey, DiagnosticPayload, FactId, FactPayload, ProposalId,
-    Provenance, Suggestor, fact::ProposedFact,
+    AgentEffect, Context, ContextFact, ContextKey, DiagnosticPayload, FactId, FactPayload,
+    ProposalId, Provenance, Suggestor, fact::ProposedFact,
 };
 use ed25519_dalek::VerifyingKey;
 use serde::{Deserialize, Serialize};
@@ -167,9 +167,23 @@ fn proposed_fact(
     PROVENANCE_SOURCE.proposed_fact(key, id, payload)
 }
 
+fn proposed_fact_for(
+    source: &ContextFact,
+    key: ContextKey,
+    id: impl Into<ProposalId>,
+    payload: impl FactPayload + PartialEq,
+) -> ProposedFact {
+    PROVENANCE_SOURCE.proposed_fact_for(source, key, id, payload)
+}
+
 #[cfg(feature = "analysis")]
-fn diagnostic(id: impl Into<ProposalId>, message: impl Into<String>) -> ProposedFact {
-    proposed_fact(
+fn diagnostic_for(
+    source: &ContextFact,
+    id: impl Into<ProposalId>,
+    message: impl Into<String>,
+) -> ProposedFact {
+    proposed_fact_for(
+        source,
         ContextKey::Diagnostic,
         id,
         DiagnosticPayload::new("arbiter", message.into()),
@@ -241,30 +255,31 @@ where
 
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
         let mut proposals = Vec::new();
-        let mut inputs = Vec::new();
         for fact in ctx.get(self.input_key) {
-            match fact.require_payload::<CedarAnalysisInput>() {
-                Ok(input) => inputs.push(input.clone()),
+            let input = match fact.require_payload::<CedarAnalysisInput>() {
+                Ok(input) => input,
                 Err(err) => {
-                    proposals.push(diagnostic(
+                    proposals.push(diagnostic_for(
+                        fact,
                         format!("cedar-analysis-parse-error-{}", fact.id()),
                         format!("expected CedarAnalysisInput payload: {err}"),
                     ));
+                    continue;
                 }
-            }
-        }
+            };
 
-        for input in inputs {
             match self.backend.analyze(&input).await {
                 Ok(report) => proposals.push(
-                    proposed_fact(
+                    proposed_fact_for(
+                        fact,
                         self.output_key,
                         format!("cedar-analysis-report-{}", report.plan.invariant_id),
                         report.clone(),
                     )
                     .with_confidence(analysis_confidence(&report)),
                 ),
-                Err(err) => proposals.push(diagnostic(
+                Err(err) => proposals.push(diagnostic_for(
+                    fact,
                     format!("cedar-analysis-backend-error-{}", input.invariant_id),
                     format!(
                         "Cedar Analysis backend {} failed: {err}",
@@ -337,7 +352,8 @@ impl Suggestor for PolicyGateSuggestor {
         let req: DecideRequest = match seed.require_payload::<DecideRequest>() {
             Ok(r) => r.clone(),
             Err(e) => {
-                let diag = proposed_fact(
+                let diag = proposed_fact_for(
+                    seed,
                     ContextKey::Diagnostic,
                     "policy-gate-error",
                     DiagnosticPayload::new(
@@ -351,11 +367,13 @@ impl Suggestor for PolicyGateSuggestor {
 
         match self.engine.evaluate(&req) {
             Ok(decision) => {
-                let proposal = proposed_fact(self.output_key, "policy-decision", decision);
+                let proposal =
+                    proposed_fact_for(seed, self.output_key, "policy-decision", decision);
                 AgentEffect::with_proposal(proposal)
             }
             Err(e) => {
-                let diag = proposed_fact(
+                let diag = proposed_fact_for(
+                    seed,
                     ContextKey::Diagnostic,
                     "policy-gate-error",
                     DiagnosticPayload::new("arbiter", format!("policy evaluation failed: {e}")),
@@ -426,7 +444,8 @@ impl Suggestor for DelegationVerifySuggestor {
         let req: DecideRequest = match seed.require_payload::<DecideRequest>() {
             Ok(r) => r.clone(),
             Err(e) => {
-                let diag = proposed_fact(
+                let diag = proposed_fact_for(
+                    seed,
                     ContextKey::Diagnostic,
                     "delegation-verify-error",
                     DiagnosticPayload::new(
@@ -439,7 +458,8 @@ impl Suggestor for DelegationVerifySuggestor {
         };
 
         let Some(ref token_b64) = req.delegation_b64 else {
-            let diag = proposed_fact(
+            let diag = proposed_fact_for(
+                seed,
                 ContextKey::Diagnostic,
                 "delegation-verify-error",
                 DiagnosticPayload::new("arbiter", "no delegation_b64 in request"),
@@ -449,7 +469,8 @@ impl Suggestor for DelegationVerifySuggestor {
 
         match delegation::verify(token_b64, &self.verifying_key, &req) {
             Ok(valid) => {
-                let proposal = proposed_fact(
+                let proposal = proposed_fact_for(
+                    seed,
                     self.output_key,
                     "delegation-result",
                     DelegationVerificationPayload {
@@ -460,7 +481,8 @@ impl Suggestor for DelegationVerifySuggestor {
                 AgentEffect::with_proposal(proposal)
             }
             Err(e) => {
-                let proposal = proposed_fact(
+                let proposal = proposed_fact_for(
+                    seed,
                     self.output_key,
                     "delegation-result",
                     DelegationVerificationPayload {
@@ -490,7 +512,8 @@ fn execute_flow_gate(
     let input: FlowGateInput = match seed.require_payload::<FlowGateInput>() {
         Ok(i) => i.clone(),
         Err(e) => {
-            let diag = proposed_fact(
+            let diag = proposed_fact_for(
+                seed,
                 ContextKey::Diagnostic,
                 error_id,
                 DiagnosticPayload::new("arbiter", format!("expected FlowGateInput payload: {e}")),
@@ -501,11 +524,12 @@ fn execute_flow_gate(
 
     match engine.evaluate_flow(&input) {
         Ok(decision) => {
-            let proposal = proposed_fact(output_key, proposal_id, decision);
+            let proposal = proposed_fact_for(seed, output_key, proposal_id, decision);
             AgentEffect::with_proposal(proposal)
         }
         Err(e) => {
-            let diag = proposed_fact(
+            let diag = proposed_fact_for(
+                seed,
                 ContextKey::Diagnostic,
                 error_id,
                 DiagnosticPayload::new("arbiter", format!("flow gate evaluation failed: {e}")),
@@ -824,13 +848,14 @@ impl Suggestor for ApprovalGateSuggestor {
 
     async fn execute(&self, ctx: &dyn Context) -> AgentEffect {
         let facts = ctx.get(self.watched_key);
-        let needs_approval = facts.iter().any(|f| {
+        let needs_approval = facts.iter().find(|f| {
             f.payload::<ApprovalRiskPayload>()
                 .is_none_or(|payload| payload.confidence >= self.stakes_threshold)
         });
 
-        if needs_approval {
-            AgentEffect::with_proposal(proposed_fact(
+        if let Some(source) = needs_approval {
+            AgentEffect::with_proposal(proposed_fact_for(
+                source,
                 ContextKey::Constraints,
                 "approval-pending",
                 ApprovalConstraintPayload {
@@ -930,7 +955,8 @@ impl Suggestor for DataClassificationGateSuggestor {
                 }
             }
             if !detected.is_empty() {
-                proposals.push(proposed_fact(
+                proposals.push(proposed_fact_for(
+                    fact,
                     ContextKey::Constraints,
                     format!("pii-detected-{}", fact.id()),
                     DataClassificationConstraintPayload {
@@ -1116,7 +1142,8 @@ impl Suggestor for ComplianceGateSuggestor {
                 };
 
                 if violated {
-                    proposals.push(proposed_fact(
+                    proposals.push(proposed_fact_for(
+                        fact,
                         ContextKey::Constraints,
                         format!("compliance-{}-{}", rule.id, fact.id()),
                         ComplianceConstraintPayload {
